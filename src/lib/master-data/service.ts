@@ -1,41 +1,125 @@
+import { Prisma, RecordStatus } from "@prisma/client"
+
+import { createAuditLog } from "@/src/lib/audit"
+import type { DepartmentInput, OrganizationInput, PropertyInput } from "@/src/lib/master-data/validation"
 import { prisma } from "@/src/lib/prisma"
 
-export async function listOrganizations() {
-  return prisma.organization.findMany({
-    select: {
-      id: true,
-      name: true,
-      slug: true,
-      status: true,
-    },
-    orderBy: { name: "asc" },
-  })
+const organizationSelect = {
+  id: true, name: true, slug: true, status: true,
+} satisfies Prisma.OrganizationSelect
+const propertySelect = {
+  id: true, organizationId: true, name: true, code: true, status: true,
+  address: true, city: true, state: true, zipCode: true, timeZone: true,
+  organization: { select: { id: true, name: true } },
+} satisfies Prisma.PropertySelect
+const departmentSelect = {
+  id: true, organizationId: true, propertyId: true, name: true, code: true, status: true,
+  organization: { select: { id: true, name: true } },
+  property: { select: { id: true, name: true } },
+} satisfies Prisma.DepartmentSelect
+
+export function listOrganizations() {
+  return prisma.organization.findMany({ select: organizationSelect, orderBy: { name: "asc" } })
+}
+
+export async function createOrganization(input: OrganizationInput) {
+  await ensureUniqueSlug(input.slug)
+  const item = await prisma.organization.create({ data: input, select: organizationSelect })
+  await audit("CREATE_ORGANIZATION", "Organization", item.id, item.id)
+  return item
+}
+
+export async function updateOrganization(id: string, input: OrganizationInput) {
+  await ensureUniqueSlug(input.slug, id)
+  const item = await prisma.organization.update({ where: { id }, data: input, select: organizationSelect })
+  await audit("UPDATE_ORGANIZATION", "Organization", item.id, item.id)
+  return item
+}
+
+export async function setOrganizationStatus(id: string, status: RecordStatus) {
+  const item = await prisma.organization.update({ where: { id }, data: { status }, select: organizationSelect })
+  await audit(status === RecordStatus.ACTIVE ? "REACTIVATE_ORGANIZATION" : "DEACTIVATE_ORGANIZATION", "Organization", item.id, item.id)
+  return item
 }
 
 export async function listProperties() {
-  return prisma.property.findMany({
-    select: {
-      id: true,
-      name: true,
-      code: true,
-      city: true,
-      state: true,
-      status: true,
-      organization: { select: { id: true, name: true } },
-    },
-    orderBy: { name: "asc" },
-  })
+  const [properties, organizations] = await Promise.all([
+    prisma.property.findMany({ select: propertySelect, orderBy: { name: "asc" } }),
+    prisma.organization.findMany({ where: { status: RecordStatus.ACTIVE }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
+  ])
+  return { properties, options: { organizations } }
+}
+
+export async function createProperty(input: PropertyInput) {
+  await ensureOrganization(input.organizationId)
+  const item = await prisma.property.create({ data: normalizeProperty(input), select: propertySelect })
+  await audit("CREATE_PROPERTY", "Property", item.id, item.organizationId, item.id)
+  return item
+}
+
+export async function updateProperty(id: string, input: PropertyInput) {
+  await ensureOrganization(input.organizationId)
+  const item = await prisma.property.update({ where: { id }, data: normalizeProperty(input), select: propertySelect })
+  await audit("UPDATE_PROPERTY", "Property", item.id, item.organizationId, item.id)
+  return item
+}
+
+export async function setPropertyStatus(id: string, status: RecordStatus) {
+  const item = await prisma.property.update({ where: { id }, data: { status }, select: propertySelect })
+  await audit(status === RecordStatus.ACTIVE ? "REACTIVATE_PROPERTY" : "DEACTIVATE_PROPERTY", "Property", item.id, item.organizationId, item.id)
+  return item
 }
 
 export async function listDepartments() {
-  return prisma.department.findMany({
-    select: {
-      id: true,
-      name: true,
-      code: true,
-      status: true,
-      property: { select: { id: true, name: true } },
-    },
-    orderBy: { name: "asc" },
-  })
+  const [departments, organizations, properties] = await Promise.all([
+    prisma.department.findMany({ select: departmentSelect, orderBy: { name: "asc" } }),
+    prisma.organization.findMany({ where: { status: RecordStatus.ACTIVE }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
+    prisma.property.findMany({ where: { status: RecordStatus.ACTIVE }, select: { id: true, organizationId: true, name: true }, orderBy: { name: "asc" } }),
+  ])
+  return { departments, options: { organizations, properties } }
+}
+
+export async function createDepartment(input: DepartmentInput) {
+  await ensureDepartmentAssignment(input)
+  const item = await prisma.department.create({ data: input, select: departmentSelect })
+  await audit("CREATE_DEPARTMENT", "Department", item.id, item.organizationId, item.propertyId)
+  return item
+}
+
+export async function updateDepartment(id: string, input: DepartmentInput) {
+  await ensureDepartmentAssignment(input)
+  const item = await prisma.department.update({ where: { id }, data: input, select: departmentSelect })
+  await audit("UPDATE_DEPARTMENT", "Department", item.id, item.organizationId, item.propertyId)
+  return item
+}
+
+export async function setDepartmentStatus(id: string, status: RecordStatus) {
+  const item = await prisma.department.update({ where: { id }, data: { status }, select: departmentSelect })
+  await audit(status === RecordStatus.ACTIVE ? "REACTIVATE_DEPARTMENT" : "DEACTIVATE_DEPARTMENT", "Department", item.id, item.organizationId, item.propertyId)
+  return item
+}
+
+async function ensureUniqueSlug(slug: string, id?: string) {
+  const existing = await prisma.organization.findUnique({ where: { slug }, select: { id: true } })
+  if (existing && existing.id !== id) throw new Error("Organization slug must be unique.")
+}
+
+async function ensureOrganization(id: string) {
+  if (!(await prisma.organization.findUnique({ where: { id }, select: { id: true } }))) {
+    throw new Error("Organization not found.")
+  }
+}
+
+async function ensureDepartmentAssignment(input: DepartmentInput) {
+  const property = await prisma.property.findUnique({ where: { id: input.propertyId }, select: { organizationId: true } })
+  if (!property) throw new Error("Property not found.")
+  if (property.organizationId !== input.organizationId) throw new Error("Property does not belong to the selected organization.")
+}
+
+function normalizeProperty(input: PropertyInput) {
+  return { ...input, address: input.address || null, city: input.city || null, state: input.state || null, zipCode: input.zipCode || null }
+}
+
+function audit(action: string, entityType: string, entityId: string, organizationId: string, propertyId?: string) {
+  return createAuditLog({ action, entityType, entityId, organizationId, propertyId })
 }
