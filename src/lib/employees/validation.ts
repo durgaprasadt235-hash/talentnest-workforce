@@ -1,4 +1,4 @@
-import { EmploymentType, RecordStatus } from "@prisma/client"
+import { EmployeeStatus, EmploymentType } from "@prisma/client"
 import { z } from "zod"
 
 const optionalId = z.string().trim().min(1).max(100).nullable().optional()
@@ -24,7 +24,11 @@ export const updateEmployeeSchema = z
   .superRefine(validateAgencyAssignment)
 
 export const employeeStatusSchema = z.object({
-  status: z.enum([RecordStatus.ACTIVE, RecordStatus.INACTIVE]),
+  status: z.enum([EmployeeStatus.ACTIVE, EmployeeStatus.INACTIVE]),
+})
+
+export const terminateEmployeeSchema = z.object({
+  reason: z.string().trim().min(1).max(2_000),
 })
 
 export const employeePinResetSchema = z

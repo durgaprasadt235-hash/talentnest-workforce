@@ -1,4 +1,5 @@
 import {
+  EmployeeStatus,
   EmploymentType,
   Prisma,
   RecordStatus,
@@ -25,6 +26,8 @@ const employeeSelect = {
   employmentType: true,
   position: true,
   status: true,
+  terminatedAt: true,
+  terminationReason: true,
   createdAt: true,
   updatedAt: true,
   organization: { select: { id: true, name: true } },
@@ -33,10 +36,13 @@ const employeeSelect = {
   staffingCompany: { select: { id: true, displayName: true } },
 } satisfies Prisma.EmployeeSelect
 
-export async function listEmployees() {
+export async function listEmployees(
+  status: EmployeeStatus | "ALL" = EmployeeStatus.ACTIVE,
+) {
   const [employees, organizations, properties, departments, staffingCompanies] =
     await Promise.all([
       prisma.employee.findMany({
+        where: status === "ALL" ? undefined : { status },
         select: employeeSelect,
         orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
       }),
@@ -113,23 +119,50 @@ export async function updateEmployee(id: string, input: UpdateEmployeeInput) {
   return employee
 }
 
-export async function setEmployeeStatus(id: string, status: RecordStatus) {
+export async function setEmployeeStatus(id: string, status: EmployeeStatus) {
   const employee = await prisma.employee.update({
     where: { id },
-    data: { status },
+    data: {
+      status,
+      terminatedAt: status === EmployeeStatus.ACTIVE ? null : undefined,
+      terminationReason: status === EmployeeStatus.ACTIVE ? null : undefined,
+    },
     select: employeeSelect,
   })
 
   await createAuditLog({
     action:
-      status === RecordStatus.ACTIVE
-        ? "EMPLOYEE_ACTIVATED"
-        : "EMPLOYEE_DEACTIVATED",
+      status === EmployeeStatus.ACTIVE
+        ? "REACTIVATE_EMPLOYEE"
+        : "MARK_EMPLOYEE_INACTIVE",
     entityType: "Employee",
     entityId: employee.id,
     organizationId: employee.organizationId,
     propertyId: employee.propertyId ?? undefined,
     metadata: { employeeNumber: employee.employeeNumber },
+  })
+
+  return employee
+}
+
+export async function terminateEmployee(id: string, reason: string) {
+  const employee = await prisma.employee.update({
+    where: { id },
+    data: {
+      status: EmployeeStatus.TERMINATED,
+      terminatedAt: new Date(),
+      terminationReason: reason,
+    },
+    select: employeeSelect,
+  })
+
+  await createAuditLog({
+    action: "TERMINATE_EMPLOYEE",
+    entityType: "Employee",
+    entityId: employee.id,
+    organizationId: employee.organizationId,
+    propertyId: employee.propertyId ?? undefined,
+    metadata: { employeeNumber: employee.employeeNumber, reason },
   })
 
   return employee
@@ -186,7 +219,7 @@ export async function deleteEmployee(id: string) {
 
     if (workforceRecordCount > 0) {
       throw new Error(
-        "Employee cannot be deleted because workforce records already exist. Deactivate instead.",
+        "Employee has workforce history. Terminate or mark inactive instead.",
       )
     }
 

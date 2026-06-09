@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react"
-import { KeyRound, Pencil, Plus, Trash2, UserCheck, UserX } from "lucide-react"
+import { KeyRound, Pencil, Plus, Trash2, UserCheck, UserMinus, UserX } from "lucide-react"
 
 import { useCurrentUser } from "@/components/rbac/current-user-provider"
 import { Badge } from "@/components/ui/badge"
@@ -22,7 +22,13 @@ import { mockRoleHeaders } from "@/src/lib/rbac/mock-auth"
 import { Permission } from "@/src/lib/rbac/permissions"
 
 type EmploymentType = "DIRECT" | "AGENCY" | "TEMPORARY" | "SEASONAL"
-type RecordStatus = "ACTIVE" | "INACTIVE"
+type RecordStatus =
+  | "ACTIVE"
+  | "INACTIVE"
+  | "TERMINATED"
+  | "ON_LEAVE"
+  | "SUSPENDED"
+type StatusFilter = RecordStatus | "ALL"
 type NamedOption = { id: string; name: string }
 type PropertyOption = NamedOption & { organizationId: string }
 type DepartmentOption = NamedOption & {
@@ -46,6 +52,8 @@ type Employee = {
   employmentType: EmploymentType
   position: string | null
   status: RecordStatus
+  terminatedAt: string | null
+  terminationReason: string | null
   organization: NamedOption
   property: NamedOption | null
   department: NamedOption | null
@@ -101,6 +109,15 @@ const employmentTypes: EmploymentType[] = [
   "SEASONAL",
 ]
 
+const statusFilters: { value: StatusFilter; label: string }[] = [
+  { value: "ACTIVE", label: "Active" },
+  { value: "INACTIVE", label: "Inactive" },
+  { value: "TERMINATED", label: "Terminated" },
+  { value: "SUSPENDED", label: "Suspended" },
+  { value: "ON_LEAVE", label: "On Leave" },
+  { value: "ALL", label: "All" },
+]
+
 const selectClass =
   "h-10 w-full rounded-lg border bg-background px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
 
@@ -113,6 +130,9 @@ export function EmployeeManagement() {
   const [employeeFormOpen, setEmployeeFormOpen] = useState(false)
   const [pinEmployee, setPinEmployee] = useState<Employee | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Employee | null>(null)
+  const [terminateTarget, setTerminateTarget] = useState<Employee | null>(null)
+  const [terminationReason, setTerminationReason] = useState("")
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("ACTIVE")
   const [message, setMessage] = useState("")
   const [error, setError] = useState("")
   const [busy, setBusy] = useState(false)
@@ -123,11 +143,14 @@ export function EmployeeManagement() {
   )
 
   const load = useCallback(async () => {
-    const response = await fetch("/api/employees", { headers: requestHeaders })
+    const response = await fetch(
+      `/api/employees?status=${encodeURIComponent(statusFilter)}`,
+      { headers: requestHeaders },
+    )
     const result = await response.json()
     if (!response.ok) throw new Error(result.error)
     setData(result)
-  }, [requestHeaders])
+  }, [requestHeaders, statusFilter])
 
   useEffect(() => {
     // Initial remote synchronization is intentionally client-side for this module.
@@ -235,7 +258,29 @@ export function EmployeeManagement() {
     })
     const result = await response.json()
     if (!response.ok) return setError(result.error)
-    setMessage(status === "ACTIVE" ? "Employee activated." : "Employee deactivated.")
+    setMessage(status === "ACTIVE" ? "Employee reactivated." : "Employee marked inactive.")
+    await load()
+  }
+
+  async function terminateSelectedEmployee(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!terminateTarget) return
+
+    setBusy(true)
+    setError("")
+    setMessage("")
+    const response = await fetch(`/api/employees/${terminateTarget.id}/terminate`, {
+      method: "POST",
+      headers: { "content-type": "application/json", ...requestHeaders },
+      body: JSON.stringify({ reason: terminationReason }),
+    })
+    const result = await response.json()
+    setBusy(false)
+
+    if (!response.ok) return setError(result.error)
+    setTerminateTarget(null)
+    setTerminationReason("")
+    setMessage("Employee terminated.")
     await load()
   }
 
@@ -464,8 +509,67 @@ export function EmployeeManagement() {
         </Sheet>
       )}
 
+      {canManage && (
+        <Sheet
+          open={Boolean(terminateTarget)}
+          onOpenChange={(open) => {
+            if (!open) {
+              setTerminateTarget(null)
+              setTerminationReason("")
+            }
+          }}
+        >
+          <SheetContent className="sm:max-w-md">
+            <SheetHeader>
+              <SheetTitle>Terminate employee</SheetTitle>
+              <SheetDescription>
+                Termination prevents future scheduling and clock-in while preserving workforce history.
+              </SheetDescription>
+            </SheetHeader>
+            <form onSubmit={terminateSelectedEmployee} className="grid gap-4 px-4">
+              <textarea
+                value={terminationReason}
+                onChange={(event) => setTerminationReason(event.target.value)}
+                className="min-h-28 rounded-lg border bg-background px-3 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+                placeholder="Termination reason"
+                required
+              />
+              <SheetFooter className="px-0">
+                <Button variant="destructive" disabled={busy}>
+                  <UserX /> {busy ? "Terminating..." : "Terminate employee"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setTerminateTarget(null)
+                    setTerminationReason("")
+                  }}
+                >
+                  Cancel
+                </Button>
+              </SheetFooter>
+            </form>
+          </SheetContent>
+        </Sheet>
+      )}
+
       <Card>
-        <CardHeader><h2 className="font-semibold">Employee master records</h2></CardHeader>
+        <CardHeader className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <h2 className="font-semibold">Employee master records</h2>
+          <div className="flex flex-wrap gap-2" aria-label="Employee status filter">
+            {statusFilters.map((filter) => (
+              <Button
+                key={filter.value}
+                size="sm"
+                variant={statusFilter === filter.value ? "default" : "outline"}
+                onClick={() => setStatusFilter(filter.value)}
+              >
+                {filter.label}
+              </Button>
+            ))}
+          </div>
+        </CardHeader>
         <CardContent className="p-0">
           <Table>
             <thead>
@@ -497,7 +601,17 @@ export function EmployeeManagement() {
                     )}
                   </TableCell>
                   <TableCell>{employee.staffingCompany?.displayName ?? "—"}</TableCell>
-                  <TableCell><Badge>{employee.status}</Badge></TableCell>
+                  <TableCell>
+                    <Badge>{employee.status}</Badge>
+                    {employee.status === "TERMINATED" && (
+                      <div className="mt-2 max-w-56 text-xs text-muted-foreground">
+                        {employee.terminatedAt && (
+                          <p>{new Date(employee.terminatedAt).toLocaleDateString()}</p>
+                        )}
+                        {employee.terminationReason && <p>{employee.terminationReason}</p>}
+                      </div>
+                    )}
+                  </TableCell>
                   {canManage && (
                     <TableCell>
                       <div className="flex flex-wrap gap-2">
@@ -509,12 +623,21 @@ export function EmployeeManagement() {
                         </Button>
                         <Button
                           size="sm"
-                          variant={employee.status === "ACTIVE" ? "destructive" : "outline"}
+                          variant="outline"
                           onClick={() => changeStatus(employee)}
                         >
-                          {employee.status === "ACTIVE" ? <UserX /> : <UserCheck />}
-                          {employee.status === "ACTIVE" ? "Deactivate" : "Activate"}
+                          {employee.status === "ACTIVE" ? <UserMinus /> : <UserCheck />}
+                          {employee.status === "ACTIVE" ? "Mark Inactive" : "Reactivate"}
                         </Button>
+                        {employee.status !== "TERMINATED" && (
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            onClick={() => setTerminateTarget(employee)}
+                          >
+                            <UserX /> Terminate Employee
+                          </Button>
+                        )}
                         <Button
                           size="sm"
                           variant="destructive"

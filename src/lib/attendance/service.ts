@@ -7,6 +7,7 @@ import {
   AttendanceExceptionType,
   AttendanceFreezeStatus,
   AttendanceRecordStatus,
+  EmployeeStatus,
   GeofenceStatus,
   ManagerApprovalStatus,
   Prisma,
@@ -146,7 +147,7 @@ export async function getDevice(deviceCode: string) {
   })
 }
 
-async function getKioskContext(input: ClockRequest) {
+async function getKioskContext(input: ClockRequest, requireActive = false) {
   const device = await prisma.attendanceDevice.findUnique({
     where: { deviceCode: input.deviceCode },
     include: {
@@ -170,12 +171,7 @@ async function getKioskContext(input: ClockRequest) {
     where: { employeeNumber: input.employeeNumber },
   })
 
-  if (
-    !employee ||
-    employee.status !== RecordStatus.ACTIVE ||
-    !employee.clockPinHash ||
-    !(await verifyPin(input.pin, employee.clockPinHash))
-  ) {
+  if (!employee || !employee.clockPinHash || !(await verifyPin(input.pin, employee.clockPinHash))) {
     await audit("CLOCK_ATTEMPT_BLOCKED", "Employee", employee?.id, device.organizationId, device.propertyId, {
       reason: "INVALID_EMPLOYEE_OR_PIN",
       employeeNumber: input.employeeNumber,
@@ -183,12 +179,20 @@ async function getKioskContext(input: ClockRequest) {
     throw new Error("Employee ID or PIN is invalid.")
   }
 
+  if (requireActive && employee.status !== EmployeeStatus.ACTIVE) {
+    await audit("CLOCK_IN_BLOCKED", "Employee", employee.id, device.organizationId, device.propertyId, {
+      reason: "EMPLOYEE_NOT_ACTIVE",
+      status: employee.status,
+    })
+    throw new Error("Clock-in blocked. Employee is not active.")
+  }
+
   return { device, employee }
 }
 
 export async function clockIn(input: ClockRequest) {
   const now = new Date()
-  const { device, employee } = await getKioskContext(input)
+  const { device, employee } = await getKioskContext(input, true)
 
   const freeze = await prisma.attendanceFreeze.findFirst({
     where: {

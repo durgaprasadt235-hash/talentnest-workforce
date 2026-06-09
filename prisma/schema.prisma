@@ -11,6 +11,14 @@ enum RecordStatus {
   INACTIVE
 }
 
+enum EmployeeStatus {
+  ACTIVE
+  INACTIVE
+  TERMINATED
+  ON_LEAVE
+  SUSPENDED
+}
+
 enum EmploymentType {
   DIRECT
   AGENCY
@@ -190,7 +198,9 @@ model Employee {
   lastName          String
   employmentType    EmploymentType
   position          String?
-  status            RecordStatus @default(ACTIVE)
+  status            EmployeeStatus @default(ACTIVE)
+  terminatedAt      DateTime?
+  terminationReason String?
   clockPinHash      String?
   staffingCompanyId String?
   createdAt         DateTime @default(now())
@@ -209,6 +219,7 @@ model Employee {
   @@index([organizationId])
   @@index([propertyId])
   @@index([departmentId])
+  @@index([status])
 }
 
 model User {

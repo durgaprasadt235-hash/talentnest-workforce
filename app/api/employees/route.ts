@@ -3,11 +3,18 @@ import { createEmployeeSchema } from "@/src/lib/employees/validation"
 import { errorResponse, parseJsonBody } from "@/src/lib/http"
 import { Permission } from "@/src/lib/rbac/permissions"
 import { requireServerPermission } from "@/src/lib/rbac/server-guard"
+import { EmployeeStatus } from "@prisma/client"
 
 export async function GET(request: Request) {
   try {
     requireServerPermission(request, Permission.VIEW_EMPLOYEES)
-    return Response.json(await listEmployees())
+    const requestedStatus = new URL(request.url).searchParams.get("status")
+    const status =
+      requestedStatus === "ALL"
+        ? "ALL"
+        : Object.values(EmployeeStatus).find((value) => value === requestedStatus) ??
+          EmployeeStatus.ACTIVE
+    return Response.json(await listEmployees(status))
   } catch (error) {
     return errorResponse(error, 500)
   }
