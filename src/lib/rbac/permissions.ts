@@ -59,6 +59,8 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     Permission.MANAGE_PROPERTIES,
     Permission.VIEW_DEPARTMENTS,
     Permission.MANAGE_DEPARTMENTS,
+    Permission.VIEW_EMPLOYEES,
+    Permission.MANAGE_EMPLOYEES,
     Permission.VIEW_STAFFING_COMPANIES,
     Permission.MANAGE_STAFFING_COMPANIES,
     Permission.VIEW_USERS,

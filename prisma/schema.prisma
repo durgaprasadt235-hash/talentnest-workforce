@@ -11,6 +11,13 @@ enum RecordStatus {
   INACTIVE
 }
 
+enum EmploymentType {
+  DIRECT
+  AGENCY
+  TEMPORARY
+  SEASONAL
+}
+
 enum StaffingCompanyStatus {
   PENDING
   ACTIVE
@@ -181,7 +188,7 @@ model Employee {
   employeeNumber    String   @unique
   firstName         String
   lastName          String
-  employmentType    String
+  employmentType    EmploymentType
   position          String?
   status            RecordStatus @default(ACTIVE)
   clockPinHash      String?

@@ -1,9 +1,15 @@
 import type { Metadata } from "next"
-import { ResourcePage } from "@/components/shared/resource-page"
-import { pageConfig } from "@/lib/page-config"
+
+import { EmployeeManagement } from "@/components/employees/employee-management"
+import { PermissionGuard } from "@/components/rbac/permission-guard"
 import { Permission } from "@/src/lib/rbac/permissions"
 
 export const metadata: Metadata = { title: "Employees" }
+
 export default function Page() {
-  return <ResourcePage title={pageConfig.employees} requiredPermission={Permission.VIEW_EMPLOYEES} />
+  return (
+    <PermissionGuard permission={Permission.VIEW_EMPLOYEES}>
+      <EmployeeManagement />
+    </PermissionGuard>
+  )
 }
