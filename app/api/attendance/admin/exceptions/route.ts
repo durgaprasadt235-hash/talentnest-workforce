@@ -1,12 +1,15 @@
 import { resolveException } from "@/src/lib/attendance/service"
-import type { ExceptionActionRequest } from "@/src/lib/attendance/types"
-import { errorResponse } from "@/src/lib/http"
+import { exceptionActionRequestSchema } from "@/src/lib/attendance/validation"
+import { errorResponse, parseJsonBody } from "@/src/lib/http"
+import { Permission } from "@/src/lib/rbac/permissions"
+import { requireServerPermission } from "@/src/lib/rbac/server-guard"
 
 export async function POST(request: Request) {
   try {
+    requireServerPermission(request, Permission.APPROVE_ATTENDANCE)
     return Response.json({
       exception: await resolveException(
-        (await request.json()) as ExceptionActionRequest,
+        await parseJsonBody(request, exceptionActionRequestSchema),
       ),
     })
   } catch (error) {

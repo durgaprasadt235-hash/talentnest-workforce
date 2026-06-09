@@ -21,6 +21,7 @@ import type {
   ExceptionActionRequest,
 } from "@/src/lib/attendance/types"
 import { prisma } from "@/src/lib/prisma"
+import { verifyPin } from "@/src/lib/security/pin"
 
 const LATE_GRACE_MINUTES = 5
 const HOUR_MS = 60 * 60 * 1000
@@ -172,7 +173,8 @@ async function getKioskContext(input: ClockRequest) {
   if (
     !employee ||
     employee.status !== RecordStatus.ACTIVE ||
-    employee.clockPin !== input.pin
+    !employee.clockPinHash ||
+    !(await verifyPin(input.pin, employee.clockPinHash))
   ) {
     await audit("CLOCK_ATTEMPT_BLOCKED", "Employee", employee?.id, device.organizationId, device.propertyId, {
       reason: "INVALID_EMPLOYEE_OR_PIN",
@@ -513,6 +515,12 @@ export async function checkMissedClockOuts() {
 }
 
 export async function getAttendanceAdminData() {
+  const employeeSelect = {
+    firstName: true,
+    lastName: true,
+    employeeNumber: true,
+  } satisfies Prisma.EmployeeSelect
+
   const [openRecords, exceptions, freezes, alerts] = await Promise.all([
     prisma.attendanceRecord.findMany({
       where: {
@@ -523,17 +531,17 @@ export async function getAttendanceAdminData() {
           ],
         },
       },
-      include: { employee: true, property: true },
+      include: { employee: { select: employeeSelect }, property: true },
       orderBy: { createdAt: "desc" },
     }),
     prisma.attendanceException.findMany({
       where: { status: AttendanceExceptionStatus.PENDING },
-      include: { employee: true, property: true },
+      include: { employee: { select: employeeSelect }, property: true },
       orderBy: { createdAt: "desc" },
     }),
     prisma.attendanceFreeze.findMany({
       where: { status: AttendanceFreezeStatus.ACTIVE },
-      include: { employee: true, property: true },
+      include: { employee: { select: employeeSelect }, property: true },
       orderBy: { createdAt: "desc" },
     }),
     prisma.attendanceAlert.findMany({

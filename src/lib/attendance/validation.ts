@@ -1,0 +1,52 @@
+import {
+  AttendanceDeviceType,
+  AttendanceExceptionStatus,
+} from "@prisma/client"
+import { z } from "zod"
+
+const trimmedString = z.string().trim().min(1)
+
+const locationSchema = z.object({
+  latitude: z.number().min(-90).max(90),
+  longitude: z.number().min(-180).max(180),
+})
+
+export const clockRequestSchema = z.object({
+  deviceCode: trimmedString.max(100),
+  employeeNumber: trimmedString.max(100),
+  pin: z.string().min(1).max(100),
+  photoUrl: z.string().max(2_000_000).optional(),
+  location: locationSchema.optional(),
+})
+
+export const createDeviceRequestSchema = z.object({
+  organizationId: trimmedString.max(100),
+  propertyId: trimmedString.max(100),
+  deviceName: trimmedString.max(200),
+  deviceType: z.enum(AttendanceDeviceType),
+})
+
+export const deviceRegistrationRequestSchema = z.object({
+  registrationToken: trimmedString.max(200),
+  fingerprint: z.record(z.string(), z.unknown()),
+})
+
+export const exceptionActionRequestSchema = z.object({
+  exceptionId: trimmedString.max(100),
+  status: z.enum([
+    AttendanceExceptionStatus.APPROVED,
+    AttendanceExceptionStatus.REJECTED,
+  ]),
+  note: z.string().trim().max(2_000).optional(),
+  userId: z.string().trim().max(100).optional(),
+})
+
+export const freezeReleaseRequestSchema = z.object({
+  freezeId: trimmedString.max(100),
+  note: z.string().trim().max(2_000).optional(),
+  userId: z.string().trim().max(100).optional(),
+})
+
+export type ClockRequest = z.infer<typeof clockRequestSchema>
+export type CreateDeviceRequest = z.infer<typeof createDeviceRequestSchema>
+export type ExceptionActionRequest = z.infer<typeof exceptionActionRequestSchema>

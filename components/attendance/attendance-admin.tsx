@@ -6,7 +6,9 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
+import { useCurrentUser } from "@/components/rbac/current-user-provider"
 import { Table, TableCell, TableHead } from "@/components/ui/table"
+import { mockRoleHeaders } from "@/src/lib/rbac/mock-auth"
 
 type Employee = { firstName: string; lastName: string; employeeNumber: string }
 type Property = { name: string }
@@ -19,17 +21,20 @@ type AdminData = { openRecords: OpenRecord[]; exceptions: Exception[]; freezes: 
 const emptyData: AdminData = { openRecords: [], exceptions: [], freezes: [], alerts: [] }
 
 export function AttendanceAdmin() {
+  const { currentUser } = useCurrentUser()
   const [data, setData] = useState<AdminData>(emptyData)
   const [note, setNote] = useState("")
   const [message, setMessage] = useState("")
   const [error, setError] = useState("")
 
   const load = useCallback(async () => {
-    const response = await fetch("/api/attendance/admin")
+    const response = await fetch("/api/attendance/admin", {
+      headers: mockRoleHeaders(currentUser.role),
+    })
     const result = await response.json()
     if (!response.ok) throw new Error(result.error)
     setData(result)
-  }, [])
+  }, [currentUser.role])
 
   useEffect(() => {
     // Initial remote synchronization is intentionally client-side for the MVP.
@@ -38,7 +43,10 @@ export function AttendanceAdmin() {
   }, [load])
 
   async function runCheck(path: string, label: string) {
-    const response = await fetch(path, { method: "POST" })
+    const response = await fetch(path, {
+      method: "POST",
+      headers: mockRoleHeaders(currentUser.role),
+    })
     const result = await response.json()
     if (!response.ok) return setError(result.error)
     setMessage(`${label} completed. ${result.checked} record(s) checked.`)
@@ -48,7 +56,10 @@ export function AttendanceAdmin() {
   async function resolve(exceptionId: string, status: "APPROVED" | "REJECTED") {
     const response = await fetch("/api/attendance/admin/exceptions", {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: {
+        "content-type": "application/json",
+        ...mockRoleHeaders(currentUser.role),
+      },
       body: JSON.stringify({ exceptionId, status, note }),
     })
     const result = await response.json()
@@ -60,7 +71,10 @@ export function AttendanceAdmin() {
   async function release(freezeId: string) {
     const response = await fetch("/api/attendance/admin/freezes", {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: {
+        "content-type": "application/json",
+        ...mockRoleHeaders(currentUser.role),
+      },
       body: JSON.stringify({ freezeId, note }),
     })
     const result = await response.json()

@@ -1,13 +1,13 @@
 import { releaseFreeze } from "@/src/lib/attendance/service"
-import { errorResponse } from "@/src/lib/http"
+import { freezeReleaseRequestSchema } from "@/src/lib/attendance/validation"
+import { errorResponse, parseJsonBody } from "@/src/lib/http"
+import { Permission } from "@/src/lib/rbac/permissions"
+import { requireServerPermission } from "@/src/lib/rbac/server-guard"
 
 export async function POST(request: Request) {
   try {
-    const body = (await request.json()) as {
-      freezeId: string
-      note?: string
-      userId?: string
-    }
+    requireServerPermission(request, Permission.APPROVE_ATTENDANCE)
+    const body = await parseJsonBody(request, freezeReleaseRequestSchema)
     return Response.json({
       freeze: await releaseFreeze(body.freezeId, body.note, body.userId),
     })
