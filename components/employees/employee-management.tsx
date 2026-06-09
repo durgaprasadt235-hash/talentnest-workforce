@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react"
-import { KeyRound, Pencil, Plus, UserCheck, UserX } from "lucide-react"
+import { KeyRound, Pencil, Plus, Trash2, UserCheck, UserX } from "lucide-react"
 
 import { useCurrentUser } from "@/components/rbac/current-user-provider"
 import { Badge } from "@/components/ui/badge"
@@ -112,6 +112,7 @@ export function EmployeeManagement() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [employeeFormOpen, setEmployeeFormOpen] = useState(false)
   const [pinEmployee, setPinEmployee] = useState<Employee | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<Employee | null>(null)
   const [message, setMessage] = useState("")
   const [error, setError] = useState("")
   const [busy, setBusy] = useState(false)
@@ -260,6 +261,25 @@ export function EmployeeManagement() {
     event.currentTarget.reset()
     setPinEmployee(null)
     setMessage("Employee PIN reset securely.")
+  }
+
+  async function deleteSelectedEmployee() {
+    if (!deleteTarget) return
+
+    setBusy(true)
+    setError("")
+    setMessage("")
+    const response = await fetch(`/api/employees/${deleteTarget.id}`, {
+      method: "DELETE",
+      headers: requestHeaders,
+    })
+    const result = await response.json()
+    setBusy(false)
+
+    if (!response.ok) return setError(result.error)
+    setDeleteTarget(null)
+    setMessage("Employee deleted.")
+    await load()
   }
 
   return (
@@ -414,6 +434,36 @@ export function EmployeeManagement() {
         </Sheet>
       )}
 
+      {canManage && (
+        <Sheet open={Boolean(deleteTarget)} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+          <SheetContent className="sm:max-w-md">
+            <SheetHeader>
+              <SheetTitle>Delete employee</SheetTitle>
+              <SheetDescription>
+                This will permanently delete this employee record. This action cannot be undone.
+              </SheetDescription>
+            </SheetHeader>
+            {deleteTarget && (
+              <p className="px-4 text-sm font-medium">
+                {deleteTarget.firstName} {deleteTarget.lastName} ({deleteTarget.employeeNumber})
+              </p>
+            )}
+            <SheetFooter>
+              <Button
+                variant="destructive"
+                disabled={busy}
+                onClick={deleteSelectedEmployee}
+              >
+                <Trash2 /> {busy ? "Deleting..." : "Delete employee"}
+              </Button>
+              <Button type="button" variant="outline" onClick={() => setDeleteTarget(null)}>
+                Cancel
+              </Button>
+            </SheetFooter>
+          </SheetContent>
+        </Sheet>
+      )}
+
       <Card>
         <CardHeader><h2 className="font-semibold">Employee master records</h2></CardHeader>
         <CardContent className="p-0">
@@ -464,6 +514,13 @@ export function EmployeeManagement() {
                         >
                           {employee.status === "ACTIVE" ? <UserX /> : <UserCheck />}
                           {employee.status === "ACTIVE" ? "Deactivate" : "Activate"}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          onClick={() => setDeleteTarget(employee)}
+                        >
+                          <Trash2 /> Delete
                         </Button>
                       </div>
                     </TableCell>

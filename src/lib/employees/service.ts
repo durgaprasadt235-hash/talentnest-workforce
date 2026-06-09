@@ -154,6 +154,59 @@ export async function resetEmployeePin(id: string, pin: string) {
   return employee
 }
 
+export async function deleteEmployee(id: string) {
+  return prisma.$transaction(async (transaction) => {
+    const employee = await transaction.employee.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        employeeNumber: true,
+        organizationId: true,
+        propertyId: true,
+        _count: {
+          select: {
+            shifts: true,
+            attendanceRecords: true,
+            attendanceExceptions: true,
+            attendanceFreezes: true,
+            attendanceAlerts: true,
+          },
+        },
+      },
+    })
+
+    if (!employee) {
+      throw new Error("Employee not found.")
+    }
+
+    const workforceRecordCount = Object.values(employee._count).reduce(
+      (sum, count) => sum + count,
+      0,
+    )
+
+    if (workforceRecordCount > 0) {
+      throw new Error(
+        "Employee cannot be deleted because workforce records already exist. Deactivate instead.",
+      )
+    }
+
+    await transaction.auditLog.create({
+      data: {
+        action: "DELETE_EMPLOYEE",
+        entityType: "Employee",
+        entityId: employee.id,
+        organizationId: employee.organizationId,
+        propertyId: employee.propertyId,
+        metadata: { employeeNumber: employee.employeeNumber },
+      },
+    })
+
+    await transaction.employee.delete({ where: { id: employee.id } })
+
+    return { id: employee.id }
+  })
+}
+
 function normalizeEmployeeInput(input: CreateEmployeeInput | UpdateEmployeeInput) {
   return {
     ...input,
