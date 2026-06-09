@@ -1,0 +1,15 @@
+export const pageConfig = {
+  organizations: "Organizations",
+  properties: "Properties",
+  departments: "Departments",
+  employees: "Employees",
+  "staffing-companies": "Staffing Companies",
+  schedules: "Schedules",
+  attendance: "Attendance",
+  timesheets: "Timesheets",
+  invoices: "Invoices",
+  payments: "Payments",
+  users: "Users",
+  roles: "Roles",
+  "audit-logs": "Audit Logs",
+} as const

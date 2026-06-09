@@ -1,0 +1,443 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum RecordStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum StaffingCompanyStatus {
+  PENDING
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+  REMOVED
+}
+
+enum AttendanceDeviceType {
+  TABLET
+  KIOSK
+  DESKTOP_TERMINAL
+}
+
+enum AttendanceDeviceStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED
+  REMOVED
+}
+
+enum GeofenceStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum ShiftStatus {
+  DRAFT
+  PUBLISHED
+  ACCEPTED
+  CHANGE_REQUESTED
+  COMPLETED
+  MISSED
+  CANCELLED
+}
+
+enum AttendanceRecordStatus {
+  OPEN
+  CLOCKED_OUT
+  AUTO_CLOCKED_OUT
+  PENDING_MANAGER_APPROVAL
+  REJECTED
+  FROZEN_PENDING_REVIEW
+}
+
+enum AttendanceExceptionType {
+  NONE
+  LATE_CLOCK_IN
+  UNSCHEDULED_CLOCK_IN
+  WRONG_PROPERTY
+  OUTSIDE_GEOFENCE
+  MISSED_CLOCK_OUT
+  AUTO_CLOCK_OUT
+  DEVICE_NOT_REGISTERED
+}
+
+enum ManagerApprovalStatus {
+  NOT_REQUIRED
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum AttendanceExceptionStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  RESOLVED
+}
+
+enum AttendanceFreezeStatus {
+  ACTIVE
+  RELEASED
+}
+
+enum AttendanceAlertType {
+  SCHEDULED_EMPLOYEE_NOT_CLOCKED_IN
+  LATE_CLOCK_IN_BLOCKED
+  MISSED_CLOCK_OUT_WARNING_8H
+  MISSED_CLOCK_OUT_WARNING_9H
+  AUTO_CLOCK_OUT_10H
+  EMPLOYEE_FROZEN
+}
+
+enum AttendanceAlertStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  status    RecordStatus @default(ACTIVE)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  properties           Property[]
+  departments          Department[]
+  employees            Employee[]
+  users                User[]
+  attendanceDevices    AttendanceDevice[]
+  propertyGeofences    PropertyGeofence[]
+  shifts               Shift[]
+  attendanceRecords    AttendanceRecord[]
+  attendanceExceptions AttendanceException[]
+  attendanceFreezes    AttendanceFreeze[]
+  attendanceAlerts     AttendanceAlert[]
+  auditLogs            AuditLog[]
+  staffingCompanies    StaffingCompany[]
+}
+
+model Property {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  code           String
+  status         RecordStatus @default(ACTIVE)
+  address        String?
+  city           String?
+  state          String?
+  zipCode        String?
+  timeZone       String   @default("America/New_York")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization         Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  departments          Department[]
+  employees            Employee[]
+  attendanceDevices    AttendanceDevice[]
+  geofences            PropertyGeofence[]
+  shifts               Shift[]
+  attendanceRecords    AttendanceRecord[]
+  attendanceExceptions AttendanceException[]
+  attendanceFreezes    AttendanceFreeze[]
+  attendanceAlerts     AttendanceAlert[]
+  auditLogs            AuditLog[]
+
+  @@index([organizationId])
+}
+
+model Department {
+  id             String   @id @default(cuid())
+  organizationId String
+  propertyId     String
+  name           String
+  code           String
+  status         RecordStatus @default(ACTIVE)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization      Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  property          Property           @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  employees         Employee[]
+  shifts            Shift[]
+  attendanceRecords AttendanceRecord[]
+
+  @@index([organizationId])
+  @@index([propertyId])
+}
+
+model Employee {
+  id                String   @id @default(cuid())
+  organizationId    String
+  propertyId        String?
+  departmentId      String?
+  employeeNumber    String   @unique
+  firstName         String
+  lastName          String
+  employmentType    String
+  position          String?
+  status            RecordStatus @default(ACTIVE)
+  clockPin          String?
+  staffingCompanyId String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  organization         Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  property             Property?             @relation(fields: [propertyId], references: [id], onDelete: SetNull)
+  department           Department?           @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  staffingCompany      StaffingCompany?      @relation(fields: [staffingCompanyId], references: [id], onDelete: SetNull)
+  shifts               Shift[]
+  attendanceRecords    AttendanceRecord[]
+  attendanceExceptions AttendanceException[]
+  attendanceFreezes    AttendanceFreeze[]
+  attendanceAlerts     AttendanceAlert[]
+
+  @@index([organizationId])
+  @@index([propertyId])
+  @@index([departmentId])
+}
+
+model User {
+  id             String   @id @default(cuid())
+  organizationId String?
+  email          String   @unique
+  firstName      String
+  lastName       String
+  role           String
+  status         RecordStatus @default(ACTIVE)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization        Organization?         @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  requestedExceptions AttendanceException[] @relation("RequestedBy")
+  approvedExceptions  AttendanceException[] @relation("ApprovedBy")
+  releasedFreezes     AttendanceFreeze[]    @relation("ReleasedBy")
+  auditLogs           AuditLog[]
+
+  @@index([organizationId])
+}
+
+model StaffingCompany {
+  id             String   @id @default(cuid())
+  legalName      String
+  displayName    String
+  status         StaffingCompanyStatus @default(PENDING)
+  email          String?
+  phone          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  organizationId String
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  employees    Employee[]
+}
+
+model AttendanceDevice {
+  id                String                 @id @default(cuid())
+  organizationId    String
+  propertyId        String
+  deviceName        String
+  deviceCode        String                 @unique
+  deviceType        AttendanceDeviceType
+  registrationToken String                 @unique
+  deviceFingerprint Json?
+  status            AttendanceDeviceStatus @default(PENDING)
+  registeredAt      DateTime?
+  lastSeenAt        DateTime?
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
+
+  organization      Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  property          Property           @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  attendanceRecords AttendanceRecord[]
+
+  @@index([organizationId])
+  @@index([propertyId])
+  @@index([status])
+}
+
+model PropertyGeofence {
+  id             String         @id @default(cuid())
+  organizationId String
+  propertyId     String
+  latitude       Float
+  longitude      Float
+  radiusMeters   Int
+  status         GeofenceStatus @default(ACTIVE)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  property     Property     @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([propertyId, status])
+}
+
+model Shift {
+  id             String      @id @default(cuid())
+  organizationId String
+  propertyId     String
+  departmentId   String?
+  employeeId     String?
+  position       String
+  shiftDate      DateTime    @db.Date
+  startTime      DateTime
+  endTime        DateTime
+  status         ShiftStatus @default(DRAFT)
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  organization         Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  property             Property              @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  department           Department?           @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  employee             Employee?             @relation(fields: [employeeId], references: [id], onDelete: SetNull)
+  attendanceRecords    AttendanceRecord[]
+  attendanceExceptions AttendanceException[]
+
+  @@index([organizationId])
+  @@index([propertyId, startTime])
+  @@index([employeeId, startTime])
+}
+
+model AttendanceRecord {
+  id                     String                   @id @default(cuid())
+  organizationId         String
+  propertyId             String
+  departmentId           String?
+  employeeId             String
+  shiftId                String?
+  deviceId               String
+  clockInAt              DateTime?
+  clockOutAt             DateTime?
+  clockInPhotoUrl        String?
+  clockOutPhotoUrl       String?
+  clockInLatitude        Float?
+  clockInLongitude       Float?
+  clockOutLatitude       Float?
+  clockOutLongitude      Float?
+  clockInDistanceMeters  Float?
+  clockOutDistanceMeters Float?
+  status                 AttendanceRecordStatus
+  exceptionType          AttendanceExceptionType?
+  managerApprovalStatus  ManagerApprovalStatus    @default(NOT_REQUIRED)
+  notes                  String?
+  createdAt              DateTime                 @default(now())
+  updatedAt              DateTime                 @updatedAt
+
+  organization Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  property     Property              @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  department   Department?           @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  employee     Employee              @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  shift        Shift?                @relation(fields: [shiftId], references: [id], onDelete: SetNull)
+  device       AttendanceDevice      @relation(fields: [deviceId], references: [id], onDelete: Restrict)
+  exceptions   AttendanceException[]
+  freezes      AttendanceFreeze[]
+  alerts       AttendanceAlert[]
+
+  @@index([organizationId])
+  @@index([propertyId, status])
+  @@index([employeeId, status])
+}
+
+model AttendanceException {
+  id                 String                    @id @default(cuid())
+  attendanceRecordId String?
+  organizationId     String
+  propertyId         String
+  employeeId         String
+  shiftId            String?
+  exceptionType      AttendanceExceptionType
+  reason             String
+  status             AttendanceExceptionStatus @default(PENDING)
+  requestedByUserId  String?
+  approvedByUserId   String?
+  approvedAt         DateTime?
+  createdAt          DateTime                  @default(now())
+  updatedAt          DateTime                  @updatedAt
+
+  attendanceRecord AttendanceRecord? @relation(fields: [attendanceRecordId], references: [id], onDelete: SetNull)
+  organization     Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  property         Property          @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  employee         Employee          @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  shift            Shift?            @relation(fields: [shiftId], references: [id], onDelete: SetNull)
+  requestedBy      User?             @relation("RequestedBy", fields: [requestedByUserId], references: [id], onDelete: SetNull)
+  approvedBy       User?             @relation("ApprovedBy", fields: [approvedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([propertyId, status])
+  @@index([employeeId, status])
+}
+
+model AttendanceFreeze {
+  id                 String                 @id @default(cuid())
+  organizationId     String
+  propertyId         String
+  employeeId         String
+  attendanceRecordId String                 @unique
+  reason             String
+  status             AttendanceFreezeStatus @default(ACTIVE)
+  releasedByUserId   String?
+  releasedAt         DateTime?
+  createdAt          DateTime               @default(now())
+  updatedAt          DateTime               @updatedAt
+
+  organization     Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  property         Property         @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  employee         Employee         @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  attendanceRecord AttendanceRecord @relation(fields: [attendanceRecordId], references: [id], onDelete: Cascade)
+  releasedBy       User?            @relation("ReleasedBy", fields: [releasedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([employeeId, status])
+}
+
+model AttendanceAlert {
+  id                 String                @id @default(cuid())
+  organizationId     String
+  propertyId         String
+  employeeId         String?
+  attendanceRecordId String?
+  alertType          AttendanceAlertType
+  recipientRole      String
+  message            String
+  status             AttendanceAlertStatus @default(PENDING)
+  createdAt          DateTime              @default(now())
+  updatedAt          DateTime              @updatedAt
+
+  organization     Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  property         Property          @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  employee         Employee?         @relation(fields: [employeeId], references: [id], onDelete: SetNull)
+  attendanceRecord AttendanceRecord? @relation(fields: [attendanceRecordId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([propertyId, status])
+  @@index([employeeId])
+}
+
+model AuditLog {
+  id             String   @id @default(cuid())
+  organizationId String?
+  propertyId     String?
+  userId         String?
+  action         String
+  entityType     String
+  entityId       String?
+  metadata       Json?
+  createdAt      DateTime @default(now())
+
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  property     Property?     @relation(fields: [propertyId], references: [id], onDelete: SetNull)
+  user         User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([propertyId])
+  @@index([entityType, entityId])
+}
