@@ -474,7 +474,7 @@ export function EmployeeManagement() {
           </Table>
           {data.employees.length === 0 && (
             <p className="p-6 text-center text-sm text-muted-foreground">
-              No employee records found.
+              No employees found. Create your first employee.
             </p>
           )}
         </CardContent>

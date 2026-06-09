@@ -20,7 +20,7 @@ geofence checks, attendance exceptions, and manager review.
    npm install
    ```
 
-4. Apply migrations and seed local data:
+4. Apply migrations and validate database connectivity:
 
    ```bash
    npm run db:migrate
@@ -44,7 +44,6 @@ variables. Database commands and application routes that access Prisma do.
 | --- | --- | --- |
 | `DATABASE_URL` | Runtime and database commands | PostgreSQL connection used by the application and Prisma migrations. |
 | `SHADOW_DATABASE_URL` | Local migration development | Separate PostgreSQL database used by `prisma migrate dev`. Do not point it at production. |
-| `SEED_EMPLOYEE_PIN` | Optional | PIN hashed for seeded employees. Defaults to `2468` for local development. |
 
 Never commit real environment values. Employee PINs are hashed with bcrypt
 before storage and are not returned by attendance APIs.
@@ -60,13 +59,12 @@ npm run prisma:validate     # Validate the Prisma schema
 npm run validate            # Run Prisma validation, lint, and production build
 npm run db:migrate          # Create/apply migrations in local development
 npm run db:migrate:deploy   # Apply committed migrations in deployment
-npm run db:seed             # Upsert local attendance foundation seed data
+npm run db:seed             # Validate database connectivity without inserts
 ```
 
-The seed is idempotent. It upserts Chase Hotel Group, Best Western Erie, Front
-Desk, a property geofence, an attendance kiosk, employees `E1001` through
-`E1003`, and today's published shifts. It does not create dashboard metrics or
-UI-only records.
+The seed command is intentionally a no-op. It validates database connectivity
+without inserting organizations, properties, departments, employees, devices,
+shifts, staffing companies, or other records.
 
 ## Vercel and Neon Deployment
 
@@ -84,8 +82,8 @@ UI-only records.
    DATABASE_URL="..." npm run db:migrate:deploy
    ```
 
-7. Run `npm run db:seed` only for environments that should contain the provided
-   attendance demonstration data.
+7. Optionally run `npm run db:seed` to validate database connectivity. It does
+   not insert records.
 
 Do not run `prisma migrate dev` against Neon production. Use
 `prisma migrate deploy` for production releases.
