@@ -18,6 +18,7 @@ type Device = {
   organization: Option | null
   property: Option | null
   deviceFingerprint: Record<string, unknown> | null
+  lastSeenAt: string | null
   createdAt: string
 }
 
@@ -68,10 +69,10 @@ export function DeviceManagement() {
 
     setBusyDeviceId(deviceId)
     setError("")
-    const response = await fetch("/api/attendance/devices/approve", {
+    const response = await fetch(`/api/attendance/devices/${deviceId}/approve`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ deviceId, ...assignment }),
+      body: JSON.stringify(assignment),
     })
     const data = await response.json()
     setBusyDeviceId("")
@@ -82,10 +83,8 @@ export function DeviceManagement() {
   async function reject(deviceId: string) {
     setBusyDeviceId(deviceId)
     setError("")
-    const response = await fetch("/api/attendance/devices/reject", {
+    const response = await fetch(`/api/attendance/devices/${deviceId}/reject`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ deviceId }),
     })
     const data = await response.json()
     setBusyDeviceId("")
@@ -113,7 +112,7 @@ export function DeviceManagement() {
         </CardHeader>
         <CardContent className="p-0">
           <Table>
-            <thead><tr><TableHead>Device</TableHead><TableHead>Fingerprint</TableHead><TableHead>Organization</TableHead><TableHead>Property</TableHead><TableHead>Actions</TableHead></tr></thead>
+            <thead><tr><TableHead>Device</TableHead><TableHead>Fingerprint</TableHead><TableHead>Status</TableHead><TableHead>Last seen</TableHead><TableHead>Organization</TableHead><TableHead>Property</TableHead><TableHead>Actions</TableHead></tr></thead>
             <tbody>
               {pendingDevices.map((device) => {
                 const assignment = assignments[device.id]
@@ -130,6 +129,8 @@ export function DeviceManagement() {
                     <TableCell className="max-w-64 text-xs text-muted-foreground">
                       {formatFingerprint(device.deviceFingerprint)}
                     </TableCell>
+                    <TableCell><DeviceStatus status={device.status} /></TableCell>
+                    <TableCell className="text-xs text-muted-foreground">{formatTimestamp(device.lastSeenAt)}</TableCell>
                     <TableCell>
                       <select
                         aria-label={`Organization for ${device.deviceName}`}
@@ -173,7 +174,7 @@ export function DeviceManagement() {
         </CardHeader>
         <CardContent className="p-0">
           <Table>
-            <thead><tr><TableHead>Name</TableHead><TableHead>Property</TableHead><TableHead>Type</TableHead><TableHead>Device code</TableHead><TableHead>Status</TableHead></tr></thead>
+            <thead><tr><TableHead>Name</TableHead><TableHead>Property</TableHead><TableHead>Type</TableHead><TableHead>Device code</TableHead><TableHead>Status</TableHead><TableHead>Last seen</TableHead></tr></thead>
             <tbody>
               {reviewedDevices.map((device) => (
                 <tr key={device.id}>
@@ -181,7 +182,8 @@ export function DeviceManagement() {
                   <TableCell>{device.property?.name ?? "Not assigned"}</TableCell>
                   <TableCell>{device.deviceType}</TableCell>
                   <TableCell className="font-mono text-xs">{device.deviceCode ?? "Not generated"}</TableCell>
-                  <TableCell><Badge>{device.status}</Badge></TableCell>
+                  <TableCell><DeviceStatus status={device.status} /></TableCell>
+                  <TableCell className="text-xs text-muted-foreground">{formatTimestamp(device.lastSeenAt)}</TableCell>
                 </tr>
               ))}
             </tbody>
@@ -203,4 +205,13 @@ function formatFingerprint(fingerprint: Record<string, unknown> | null) {
   return [fingerprint.platform, fingerprint.language, fingerprint.screenSize]
     .filter((value) => typeof value === "string")
     .join(" / ")
+}
+
+function formatTimestamp(timestamp: string | null) {
+  return timestamp ? new Date(timestamp).toLocaleString() : "Never"
+}
+
+function DeviceStatus({ status }: { status: string }) {
+  const label = status.charAt(0) + status.slice(1).toLowerCase()
+  return <Badge className={status === "ACTIVE" ? "" : "bg-muted text-muted-foreground"}>{label}</Badge>
 }

@@ -43,6 +43,7 @@ export function KioskClock() {
   const [message, setMessage] = useState("")
   const [error, setError] = useState(false)
   const [busy, setBusy] = useState(false)
+  const deviceStatus = device?.status
 
   const checkDevice = useCallback(async () => {
     const response = await fetch("/api/attendance/devices/request", {
@@ -67,10 +68,10 @@ export function KioskClock() {
         setError(true)
         setMessage(caught.message)
       })
-    }, 30_000)
+    }, deviceStatus === "PENDING" || !deviceStatus ? 5_000 : 30_000)
 
     return () => window.clearInterval(interval)
-  }, [checkDevice])
+  }, [checkDevice, deviceStatus])
 
   async function startCamera() {
     try {
@@ -148,7 +149,7 @@ export function KioskClock() {
   }
 
   if (!device || device.status === "PENDING") {
-    return <DeviceState title="Waiting for device approval" description="A device approval request was sent automatically. This kiosk checks for approval every 30 seconds." onRefresh={() => checkDevice()} />
+    return <DeviceState title="Waiting for device approval" description="A device approval request was sent automatically. This kiosk activates as soon as a manager approves it." onRefresh={() => checkDevice()} />
   }
 
   if (device.status !== "ACTIVE" || !device.deviceCode || !device.property) {

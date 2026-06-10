@@ -18,8 +18,8 @@ import {
 
 import { calculateDistanceMeters } from "@/src/lib/attendance/distance"
 import type {
+  ApproveDeviceRequest,
   ClockRequest,
-  CreateDeviceRequest,
   DeviceRequest,
   ExceptionActionRequest,
 } from "@/src/lib/attendance/types"
@@ -86,9 +86,9 @@ export async function listDeviceOptions() {
   return { organizations, properties }
 }
 
-export async function approveDevice(input: CreateDeviceRequest) {
+export async function approveDevice(deviceId: string, input: ApproveDeviceRequest) {
   const device = await prisma.attendanceDevice.findUnique({
-    where: { id: input.deviceId },
+    where: { id: deviceId },
   })
 
   if (!device || device.status !== AttendanceDeviceStatus.PENDING) {
@@ -112,8 +112,10 @@ export async function approveDevice(input: CreateDeviceRequest) {
       organizationId: input.organizationId,
       propertyId: input.propertyId,
       deviceCode: `TN-${generateSecureCode(6).toUpperCase()}`,
+      deviceFingerprint: device.deviceFingerprint ?? Prisma.JsonNull,
       status: AttendanceDeviceStatus.ACTIVE,
       registeredAt: new Date(),
+      lastSeenAt: new Date(),
     },
     include: { organization: true, property: true },
   })
@@ -137,13 +139,14 @@ export async function requestDevice(input: DeviceRequest) {
   })
 
   if (existing) {
-    if (existing.status === AttendanceDeviceStatus.ACTIVE) {
-      await prisma.attendanceDevice.update({
-        where: { id: existing.id },
-        data: { lastSeenAt: new Date() },
-      })
-    }
-    return existing
+    return prisma.attendanceDevice.update({
+      where: { id: existing.id },
+      data: {
+        deviceFingerprint: input.fingerprint as Prisma.InputJsonValue,
+        lastSeenAt: new Date(),
+      },
+      include: { organization: true, property: true },
+    })
   }
 
   const platform =

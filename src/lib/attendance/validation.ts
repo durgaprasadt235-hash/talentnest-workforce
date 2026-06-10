@@ -18,18 +18,13 @@ export const clockRequestSchema = z.object({
   location: locationSchema.optional(),
 })
 
-export const createDeviceRequestSchema = z.object({
-  deviceId: trimmedString.max(100),
+export const approveDeviceRequestSchema = z.object({
   organizationId: trimmedString.max(100),
   propertyId: trimmedString.max(100),
 })
 
 export const deviceRequestSchema = z.object({
   fingerprint: z.record(z.string(), z.unknown()),
-})
-
-export const rejectDeviceRequestSchema = z.object({
-  deviceId: trimmedString.max(100),
 })
 
 export const exceptionActionRequestSchema = z.object({
@@ -49,6 +44,6 @@ export const freezeReleaseRequestSchema = z.object({
 })
 
 export type ClockRequest = z.infer<typeof clockRequestSchema>
-export type CreateDeviceRequest = z.infer<typeof createDeviceRequestSchema>
+export type ApproveDeviceRequest = z.infer<typeof approveDeviceRequestSchema>
 export type DeviceRequest = z.infer<typeof deviceRequestSchema>
 export type ExceptionActionRequest = z.infer<typeof exceptionActionRequestSchema>

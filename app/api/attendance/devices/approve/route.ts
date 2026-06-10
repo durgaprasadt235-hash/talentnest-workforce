@@ -1,11 +1,17 @@
 import { approveDevice } from "@/src/lib/attendance/service"
-import { createDeviceRequestSchema } from "@/src/lib/attendance/validation"
-import { errorResponse, parseJsonBody } from "@/src/lib/http"
+import { approveDeviceRequestSchema } from "@/src/lib/attendance/validation"
+import { errorResponse } from "@/src/lib/http"
 
 export async function POST(request: Request) {
   try {
-    const input = await parseJsonBody(request, createDeviceRequestSchema)
-    return Response.json({ device: await approveDevice(input) })
+    const body = await request.json()
+    const input = approveDeviceRequestSchema.parse(body)
+
+    if (typeof body.deviceId !== "string" || !body.deviceId.trim()) {
+      throw new Error("Device ID is required.")
+    }
+
+    return Response.json({ device: await approveDevice(body.deviceId, input) })
   } catch (error) {
     return errorResponse(error)
   }
