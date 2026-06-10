@@ -14,7 +14,7 @@ const locationSchema = z.object({
 export const clockRequestSchema = z.object({
   deviceCode: trimmedString.max(100),
   pin: z.string().regex(/^\d{4}$/),
-  photoUrl: z.string().max(2_000_000).optional(),
+  photoUrl: z.string().min(1).max(2_000_000),
   location: locationSchema.optional(),
 })
 

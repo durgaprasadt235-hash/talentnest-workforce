@@ -545,6 +545,17 @@ export async function clockIn(input: ClockRequest) {
     })
   }
 
+  if (exceptionType === AttendanceExceptionType.UNSCHEDULED_CLOCK_IN) {
+    await audit(
+      "UNSCHEDULED_CLOCK_IN_RECORDED",
+      "AttendanceRecord",
+      record.id,
+      record.organizationId,
+      record.propertyId,
+      { managerApprovalStatus: ManagerApprovalStatus.PENDING },
+    )
+  }
+
   await audit("CLOCK_IN_ATTEMPT", "AttendanceRecord", record.id, record.organizationId, record.propertyId, {
     exceptionType: exceptionType ?? AttendanceExceptionType.NONE,
     pendingManagerApproval: pending,
@@ -552,9 +563,12 @@ export async function clockIn(input: ClockRequest) {
 
   return {
     record,
-    message: pending
-      ? "Clock-in request submitted for manager approval."
-      : "Clock-in successful.",
+    message:
+      exceptionType === AttendanceExceptionType.UNSCHEDULED_CLOCK_IN
+        ? "No scheduled shift found. Your clock-in has been recorded and flagged for manager review."
+        : pending
+          ? "Clock-in request submitted for manager approval."
+          : "Clock-in successful.",
   }
 }
 
@@ -832,6 +846,19 @@ export async function resolveException(input: ExceptionActionRequest) {
     exception.propertyId,
     { note: input.note },
   )
+
+  if (exception.exceptionType === AttendanceExceptionType.UNSCHEDULED_CLOCK_IN) {
+    await audit(
+      input.status === AttendanceExceptionStatus.APPROVED
+        ? "UNSCHEDULED_CLOCK_IN_APPROVED"
+        : "UNSCHEDULED_CLOCK_IN_REJECTED",
+      "AttendanceRecord",
+      exception.attendanceRecordId ?? exception.id,
+      exception.organizationId,
+      exception.propertyId,
+      { note: input.note, exceptionId: exception.id },
+    )
+  }
 
   return exception
 }

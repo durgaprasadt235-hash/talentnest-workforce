@@ -12,7 +12,7 @@ import { mockRoleHeaders } from "@/src/lib/rbac/mock-auth"
 
 type Employee = { firstName: string; lastName: string; employeeNumber: string }
 type Property = { name: string }
-type OpenRecord = { id: string; status: string; clockInAt?: string; employee: Employee; property: Property }
+type OpenRecord = { id: string; status: string; exceptionType?: string; managerApprovalStatus: string; clockInAt?: string; employee: Employee; property: Property }
 type Exception = { id: string; exceptionType: string; reason: string; employee: Employee; property: Property }
 type Freeze = { id: string; reason: string; employee: Employee; property: Property }
 type Alert = { id: string; alertType: string; recipientRole: string; message: string; status: string }
@@ -104,7 +104,7 @@ export function AttendanceAdmin() {
           <tr key={item.id}>
             <TableCell>{item.employee.firstName} {item.employee.lastName}</TableCell>
             <TableCell>{item.property.name}</TableCell>
-            <TableCell><Badge>{item.exceptionType}</Badge></TableCell>
+            <TableCell><Badge>{formatException(item.exceptionType)}</Badge></TableCell>
             <TableCell>{item.reason}</TableCell>
             <TableCell><div className="flex gap-2"><Button size="sm" onClick={() => resolve(item.id, "APPROVED")}>Approve</Button><Button size="sm" variant="outline" onClick={() => resolve(item.id, "REJECTED")}>Reject</Button></div></TableCell>
           </tr>
@@ -122,12 +122,14 @@ export function AttendanceAdmin() {
         ))}
       </AdminTable>
 
-      <AdminTable title="Recent attendance records" empty="No attendance records." headers={["Employee", "Property", "Clock in", "Status"]}>
+      <AdminTable title="Recent attendance records" empty="No attendance records." headers={["Employee", "Property", "Clock in", "Exception", "Manager approval", "Status"]}>
         {data.openRecords.map((item) => (
           <tr key={item.id}>
             <TableCell>{item.employee.firstName} {item.employee.lastName}</TableCell>
             <TableCell>{item.property.name}</TableCell>
             <TableCell>{item.clockInAt ? new Date(item.clockInAt).toLocaleString() : "Pending"}</TableCell>
+            <TableCell>{item.exceptionType ? <Badge>{formatException(item.exceptionType)}</Badge> : "None"}</TableCell>
+            <TableCell><Badge>{item.managerApprovalStatus.replaceAll("_", " ")}</Badge></TableCell>
             <TableCell><Badge>{item.status}</Badge></TableCell>
           </tr>
         ))}
@@ -157,6 +159,12 @@ export function AttendanceAdmin() {
       <p className="text-sm text-muted-foreground">Attendance alerts are stored in-app. Email, SMS, and push delivery will be added later.</p>
     </div>
   )
+}
+
+function formatException(exceptionType: string) {
+  return exceptionType === "UNSCHEDULED_CLOCK_IN"
+    ? "Unscheduled clock-in"
+    : exceptionType.replaceAll("_", " ")
 }
 
 function AdminTable({

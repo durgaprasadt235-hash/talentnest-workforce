@@ -247,7 +247,7 @@ export function KioskClock() {
     setError(false)
     setMessage(successMessage)
     setBusy(false)
-    window.setTimeout(endSession, 2_000)
+    window.setTimeout(endSession, 5_000)
   }
 
   function endSession() {
@@ -385,7 +385,7 @@ function PunchScreen({ session, now, busy, correctionOpen, correctionType, reque
           <p className="text-sm text-muted-foreground">{now.toLocaleTimeString()}</p>
           <h1 className="mt-1 text-3xl font-semibold">Welcome, {employee.firstName} {employee.lastName}</h1>
           <p className="mt-2 text-muted-foreground">{employee.position ?? "Position not assigned"}</p>
-          <p className="mt-3 text-sm">{session.shift ? `Today's shift: ${new Date(session.shift.startTime).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} - ${new Date(session.shift.endTime).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : "No scheduled shift today"}</p>
+          <p className="mt-3 text-sm">{session.shift ? `Today's shift: ${new Date(session.shift.startTime).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} - ${new Date(session.shift.endTime).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : "No scheduled shift found. Your clock-in has been recorded and flagged for manager review."}</p>
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
           <Button disabled={busy || Boolean(session.openRecord)} className="h-20 text-lg" onClick={() => onPunch("clock-in")}><LogIn /> Clock In</Button>

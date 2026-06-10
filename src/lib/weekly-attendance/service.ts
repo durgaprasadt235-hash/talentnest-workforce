@@ -127,6 +127,7 @@ export async function generateWeeklyAttendance(
     where: {
       organizationId: input.organizationId,
       propertyId: input.propertyId,
+      status: { not: AttendanceRecordStatus.REJECTED },
       OR: [
         { clockInAt: { gte: weekStartDate, lt: nextWeekStart } },
         { clockOutAt: { gte: weekStartDate, lt: nextWeekStart } },
