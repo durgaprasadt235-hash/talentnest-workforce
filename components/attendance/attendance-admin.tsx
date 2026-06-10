@@ -16,9 +16,10 @@ type OpenRecord = { id: string; status: string; clockInAt?: string; employee: Em
 type Exception = { id: string; exceptionType: string; reason: string; employee: Employee; property: Property }
 type Freeze = { id: string; reason: string; employee: Employee; property: Property }
 type Alert = { id: string; alertType: string; recipientRole: string; message: string; status: string }
-type AdminData = { openRecords: OpenRecord[]; exceptions: Exception[]; freezes: Freeze[]; alerts: Alert[] }
+type Correction = { id: string; correctionType: string; reason: string; employee: Employee; property: Property }
+type AdminData = { openRecords: OpenRecord[]; exceptions: Exception[]; freezes: Freeze[]; alerts: Alert[]; correctionRequests: Correction[] }
 
-const emptyData: AdminData = { openRecords: [], exceptions: [], freezes: [], alerts: [] }
+const emptyData: AdminData = { openRecords: [], exceptions: [], freezes: [], alerts: [], correctionRequests: [] }
 
 export function AttendanceAdmin() {
   const { currentUser } = useCurrentUser()
@@ -121,13 +122,24 @@ export function AttendanceAdmin() {
         ))}
       </AdminTable>
 
-      <AdminTable title="Open attendance records" empty="No open attendance records." headers={["Employee", "Property", "Clock in", "Status"]}>
+      <AdminTable title="Recent attendance records" empty="No attendance records." headers={["Employee", "Property", "Clock in", "Status"]}>
         {data.openRecords.map((item) => (
           <tr key={item.id}>
             <TableCell>{item.employee.firstName} {item.employee.lastName}</TableCell>
             <TableCell>{item.property.name}</TableCell>
             <TableCell>{item.clockInAt ? new Date(item.clockInAt).toLocaleString() : "Pending"}</TableCell>
             <TableCell><Badge>{item.status}</Badge></TableCell>
+          </tr>
+        ))}
+      </AdminTable>
+
+      <AdminTable title="Pending correction requests" empty="No pending correction requests." headers={["Employee", "Property", "Correction", "Reason"]}>
+        {data.correctionRequests.map((item) => (
+          <tr key={item.id}>
+            <TableCell>{item.employee.firstName} {item.employee.lastName}</TableCell>
+            <TableCell>{item.property.name}</TableCell>
+            <TableCell><Badge>{item.correctionType}</Badge></TableCell>
+            <TableCell>{item.reason}</TableCell>
           </tr>
         ))}
       </AdminTable>

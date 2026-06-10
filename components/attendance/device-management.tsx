@@ -2,10 +2,12 @@
 
 import { useCallback, useEffect, useState } from "react"
 
+import { useCurrentUser } from "@/components/rbac/current-user-provider"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Table, TableCell, TableHead } from "@/components/ui/table"
+import { mockRoleHeaders } from "@/src/lib/rbac/mock-auth"
 
 type Option = { id: string; name: string }
 type PropertyOption = Option & { organizationId: string }
@@ -25,9 +27,12 @@ type Device = {
 type Assignment = {
   organizationId: string
   propertyId: string
+  deviceName: string
+  deviceType: string
 }
 
 export function DeviceManagement() {
+  const { currentUser } = useCurrentUser()
   const [devices, setDevices] = useState<Device[]>([])
   const [organizations, setOrganizations] = useState<Option[]>([])
   const [properties, setProperties] = useState<PropertyOption[]>([])
@@ -36,13 +41,15 @@ export function DeviceManagement() {
   const [busyDeviceId, setBusyDeviceId] = useState("")
 
   const load = useCallback(async () => {
-    const response = await fetch("/api/attendance/devices")
+    const response = await fetch("/api/attendance/devices", {
+      headers: mockRoleHeaders(currentUser.role),
+    })
     const data = await response.json()
     if (!response.ok) throw new Error(data.error)
     setDevices(data.devices)
     setOrganizations(data.organizations)
     setProperties(data.properties)
-  }, [])
+  }, [currentUser.role])
 
   useEffect(() => {
     // Initial remote synchronization is intentionally client-side for the MVP.
@@ -56,6 +63,8 @@ export function DeviceManagement() {
       [deviceId]: {
         organizationId: current[deviceId]?.organizationId ?? "",
         propertyId: current[deviceId]?.propertyId ?? "",
+        deviceName: current[deviceId]?.deviceName ?? devices.find((device) => device.id === deviceId)?.deviceName ?? "",
+        deviceType: current[deviceId]?.deviceType ?? devices.find((device) => device.id === deviceId)?.deviceType ?? "KIOSK",
         ...update,
       },
     }))
@@ -71,7 +80,10 @@ export function DeviceManagement() {
     setError("")
     const response = await fetch(`/api/attendance/devices/${deviceId}/approve`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: {
+        "content-type": "application/json",
+        ...mockRoleHeaders(currentUser.role),
+      },
       body: JSON.stringify(assignment),
     })
     const data = await response.json()
@@ -85,6 +97,7 @@ export function DeviceManagement() {
     setError("")
     const response = await fetch(`/api/attendance/devices/${deviceId}/reject`, {
       method: "POST",
+      headers: mockRoleHeaders(currentUser.role),
     })
     const data = await response.json()
     setBusyDeviceId("")
@@ -112,7 +125,7 @@ export function DeviceManagement() {
         </CardHeader>
         <CardContent className="p-0">
           <Table>
-            <thead><tr><TableHead>Device</TableHead><TableHead>Fingerprint</TableHead><TableHead>Status</TableHead><TableHead>Last seen</TableHead><TableHead>Organization</TableHead><TableHead>Property</TableHead><TableHead>Actions</TableHead></tr></thead>
+            <thead><tr><TableHead>Device name</TableHead><TableHead>Type</TableHead><TableHead>Fingerprint</TableHead><TableHead>Status</TableHead><TableHead>Last seen</TableHead><TableHead>Organization</TableHead><TableHead>Property</TableHead><TableHead>Actions</TableHead></tr></thead>
             <tbody>
               {pendingDevices.map((device) => {
                 const assignment = assignments[device.id]
@@ -123,8 +136,25 @@ export function DeviceManagement() {
                 return (
                   <tr key={device.id}>
                     <TableCell>
-                      <p className="font-medium">{device.deviceName}</p>
+                      <input
+                        aria-label={`Device name for ${device.deviceName}`}
+                        value={assignment?.deviceName ?? device.deviceName}
+                        onChange={(event) => setAssignment(device.id, { deviceName: event.target.value })}
+                        className="h-9 w-48 rounded-lg border bg-background px-2 text-sm"
+                      />
                       <p className="mt-1 text-xs text-muted-foreground">{new Date(device.createdAt).toLocaleString()}</p>
+                    </TableCell>
+                    <TableCell>
+                      <select
+                        aria-label={`Device type for ${device.deviceName}`}
+                        value={assignment?.deviceType ?? device.deviceType}
+                        onChange={(event) => setAssignment(device.id, { deviceType: event.target.value })}
+                        className="h-9 rounded-lg border bg-background px-2 text-sm"
+                      >
+                        <option value="KIOSK">Kiosk</option>
+                        <option value="TABLET">Tablet</option>
+                        <option value="DESKTOP_TERMINAL">Desktop terminal</option>
+                      </select>
                     </TableCell>
                     <TableCell className="max-w-64 text-xs text-muted-foreground">
                       {formatFingerprint(device.deviceFingerprint)}

@@ -1,5 +1,6 @@
 import {
   AttendanceExceptionStatus,
+  AttendanceCorrectionStatus,
   AttendanceRecordStatus,
   ManagerApprovalStatus,
   Prisma,
@@ -140,6 +141,7 @@ export async function generateWeeklyAttendance(
         },
       },
       exceptions: { select: { status: true } },
+      correctionRequests: { select: { status: true } },
     },
   })
 
@@ -167,6 +169,9 @@ export async function generateWeeklyAttendance(
       (exception) => exception.status === AttendanceExceptionStatus.PENDING,
     ).length
     calculation.correctionPendingCount += pendingExceptions
+    calculation.correctionPendingCount += record.correctionRequests.filter(
+      (correction) => correction.status === AttendanceCorrectionStatus.PENDING,
+    ).length
     if (
       pendingExceptions === 0 &&
       (record.managerApprovalStatus === ManagerApprovalStatus.PENDING ||

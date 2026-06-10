@@ -132,6 +132,12 @@ enum WeeklyAttendanceLineApprovalStatus {
   REJECTED
 }
 
+enum AttendanceCorrectionStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
 model Organization {
   id        String       @id @default(cuid())
   name      String
@@ -140,21 +146,22 @@ model Organization {
   createdAt DateTime     @default(now())
   updatedAt DateTime     @updatedAt
 
-  properties              Property[]
-  departments             Department[]
-  employees               Employee[]
-  users                   User[]
-  attendanceDevices       AttendanceDevice[]
-  propertyGeofences       PropertyGeofence[]
-  shifts                  Shift[]
-  attendanceRecords       AttendanceRecord[]
-  attendanceExceptions    AttendanceException[]
-  attendanceFreezes       AttendanceFreeze[]
-  attendanceAlerts        AttendanceAlert[]
-  auditLogs               AuditLog[]
-  staffingCompanies       StaffingCompany[]
-  weeklyAttendanceBatches WeeklyAttendanceBatch[]
-  weeklyAttendanceLines   WeeklyAttendanceLine[]
+  properties                   Property[]
+  departments                  Department[]
+  employees                    Employee[]
+  users                        User[]
+  attendanceDevices            AttendanceDevice[]
+  propertyGeofences            PropertyGeofence[]
+  shifts                       Shift[]
+  attendanceRecords            AttendanceRecord[]
+  attendanceExceptions         AttendanceException[]
+  attendanceFreezes            AttendanceFreeze[]
+  attendanceAlerts             AttendanceAlert[]
+  auditLogs                    AuditLog[]
+  staffingCompanies            StaffingCompany[]
+  weeklyAttendanceBatches      WeeklyAttendanceBatch[]
+  weeklyAttendanceLines        WeeklyAttendanceLine[]
+  attendanceCorrectionRequests AttendanceCorrectionRequest[]
 }
 
 model Property {
@@ -171,19 +178,20 @@ model Property {
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
-  organization            Organization            @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  departments             Department[]
-  employees               Employee[]
-  attendanceDevices       AttendanceDevice[]
-  geofences               PropertyGeofence[]
-  shifts                  Shift[]
-  attendanceRecords       AttendanceRecord[]
-  attendanceExceptions    AttendanceException[]
-  attendanceFreezes       AttendanceFreeze[]
-  attendanceAlerts        AttendanceAlert[]
-  auditLogs               AuditLog[]
-  weeklyAttendanceBatches WeeklyAttendanceBatch[]
-  weeklyAttendanceLines   WeeklyAttendanceLine[]
+  organization                 Organization                  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  departments                  Department[]
+  employees                    Employee[]
+  attendanceDevices            AttendanceDevice[]
+  geofences                    PropertyGeofence[]
+  shifts                       Shift[]
+  attendanceRecords            AttendanceRecord[]
+  attendanceExceptions         AttendanceException[]
+  attendanceFreezes            AttendanceFreeze[]
+  attendanceAlerts             AttendanceAlert[]
+  auditLogs                    AuditLog[]
+  weeklyAttendanceBatches      WeeklyAttendanceBatch[]
+  weeklyAttendanceLines        WeeklyAttendanceLine[]
+  attendanceCorrectionRequests AttendanceCorrectionRequest[]
 
   @@index([organizationId])
 }
@@ -227,16 +235,17 @@ model Employee {
   createdAt         DateTime       @default(now())
   updatedAt         DateTime       @updatedAt
 
-  organization          Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  property              Property?              @relation(fields: [propertyId], references: [id], onDelete: SetNull)
-  department            Department?            @relation(fields: [departmentId], references: [id], onDelete: SetNull)
-  staffingCompany       StaffingCompany?       @relation(fields: [staffingCompanyId], references: [id], onDelete: SetNull)
-  shifts                Shift[]
-  attendanceRecords     AttendanceRecord[]
-  attendanceExceptions  AttendanceException[]
-  attendanceFreezes     AttendanceFreeze[]
-  attendanceAlerts      AttendanceAlert[]
-  weeklyAttendanceLines WeeklyAttendanceLine[]
+  organization                 Organization                  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  property                     Property?                     @relation(fields: [propertyId], references: [id], onDelete: SetNull)
+  department                   Department?                   @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  staffingCompany              StaffingCompany?              @relation(fields: [staffingCompanyId], references: [id], onDelete: SetNull)
+  shifts                       Shift[]
+  attendanceRecords            AttendanceRecord[]
+  attendanceExceptions         AttendanceException[]
+  attendanceFreezes            AttendanceFreeze[]
+  attendanceAlerts             AttendanceAlert[]
+  weeklyAttendanceLines        WeeklyAttendanceLine[]
+  attendanceCorrectionRequests AttendanceCorrectionRequest[]
 
   @@index([organizationId])
   @@index([propertyId])
@@ -374,15 +383,16 @@ model AttendanceRecord {
   createdAt              DateTime                 @default(now())
   updatedAt              DateTime                 @updatedAt
 
-  organization Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  property     Property              @relation(fields: [propertyId], references: [id], onDelete: Cascade)
-  department   Department?           @relation(fields: [departmentId], references: [id], onDelete: SetNull)
-  employee     Employee              @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  shift        Shift?                @relation(fields: [shiftId], references: [id], onDelete: SetNull)
-  device       AttendanceDevice      @relation(fields: [deviceId], references: [id], onDelete: Restrict)
-  exceptions   AttendanceException[]
-  freezes      AttendanceFreeze[]
-  alerts       AttendanceAlert[]
+  organization       Organization                  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  property           Property                      @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  department         Department?                   @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  employee           Employee                      @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  shift              Shift?                        @relation(fields: [shiftId], references: [id], onDelete: SetNull)
+  device             AttendanceDevice              @relation(fields: [deviceId], references: [id], onDelete: Restrict)
+  exceptions         AttendanceException[]
+  freezes            AttendanceFreeze[]
+  alerts             AttendanceAlert[]
+  correctionRequests AttendanceCorrectionRequest[]
 
   @@index([organizationId])
   @@index([propertyId, status])
@@ -462,6 +472,30 @@ model AttendanceAlert {
   @@index([organizationId])
   @@index([propertyId, status])
   @@index([employeeId])
+}
+
+model AttendanceCorrectionRequest {
+  id                  String                     @id @default(cuid())
+  organizationId      String
+  propertyId          String
+  employeeId          String
+  attendanceRecordId  String?
+  correctionType      String
+  requestedClockInAt  DateTime?
+  requestedClockOutAt DateTime?
+  reason              String
+  status              AttendanceCorrectionStatus @default(PENDING)
+  createdAt           DateTime                   @default(now())
+  updatedAt           DateTime                   @updatedAt
+
+  organization     Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  property         Property          @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  employee         Employee          @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  attendanceRecord AttendanceRecord? @relation(fields: [attendanceRecordId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([propertyId, status])
+  @@index([employeeId, status])
 }
 
 model WeeklyAttendanceBatch {

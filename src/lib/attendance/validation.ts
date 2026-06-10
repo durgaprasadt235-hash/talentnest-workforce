@@ -1,4 +1,5 @@
 import {
+  AttendanceDeviceType,
   AttendanceExceptionStatus,
 } from "@prisma/client"
 import { z } from "zod"
@@ -21,10 +22,26 @@ export const clockRequestSchema = z.object({
 export const approveDeviceRequestSchema = z.object({
   organizationId: trimmedString.max(100),
   propertyId: trimmedString.max(100),
+  deviceName: trimmedString.max(200),
+  deviceType: z.enum(AttendanceDeviceType),
 })
 
 export const deviceRequestSchema = z.object({
   fingerprint: z.record(z.string(), z.unknown()),
+})
+
+export const kioskEmployeeVerificationSchema = z.object({
+  deviceCode: trimmedString.max(100),
+  employeeNumber: trimmedString.max(100),
+  pin: z.string().min(1).max(100),
+})
+
+export const attendanceCorrectionRequestSchema = kioskEmployeeVerificationSchema.extend({
+  attendanceRecordId: trimmedString.max(100).optional(),
+  correctionType: trimmedString.max(100),
+  requestedClockInAt: z.iso.datetime().optional(),
+  requestedClockOutAt: z.iso.datetime().optional(),
+  reason: trimmedString.max(2_000),
 })
 
 export const exceptionActionRequestSchema = z.object({
@@ -46,4 +63,6 @@ export const freezeReleaseRequestSchema = z.object({
 export type ClockRequest = z.infer<typeof clockRequestSchema>
 export type ApproveDeviceRequest = z.infer<typeof approveDeviceRequestSchema>
 export type DeviceRequest = z.infer<typeof deviceRequestSchema>
+export type KioskEmployeeVerification = z.infer<typeof kioskEmployeeVerificationSchema>
+export type AttendanceCorrectionRequestInput = z.infer<typeof attendanceCorrectionRequestSchema>
 export type ExceptionActionRequest = z.infer<typeof exceptionActionRequestSchema>

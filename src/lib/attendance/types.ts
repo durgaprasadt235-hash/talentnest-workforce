@@ -5,7 +5,9 @@ export type LocationEvidence = {
 
 export type {
   ApproveDeviceRequest,
+  AttendanceCorrectionRequestInput,
   ClockRequest,
   DeviceRequest,
   ExceptionActionRequest,
+  KioskEmployeeVerification,
 } from "@/src/lib/attendance/validation"
