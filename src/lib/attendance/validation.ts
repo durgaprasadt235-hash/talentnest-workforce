@@ -1,5 +1,4 @@
 import {
-  AttendanceDeviceType,
   AttendanceExceptionStatus,
 } from "@prisma/client"
 import { z } from "zod"
@@ -20,15 +19,17 @@ export const clockRequestSchema = z.object({
 })
 
 export const createDeviceRequestSchema = z.object({
+  deviceId: trimmedString.max(100),
   organizationId: trimmedString.max(100),
   propertyId: trimmedString.max(100),
-  deviceName: trimmedString.max(200),
-  deviceType: z.enum(AttendanceDeviceType),
 })
 
-export const deviceRegistrationRequestSchema = z.object({
-  registrationToken: trimmedString.max(200),
+export const deviceRequestSchema = z.object({
   fingerprint: z.record(z.string(), z.unknown()),
+})
+
+export const rejectDeviceRequestSchema = z.object({
+  deviceId: trimmedString.max(100),
 })
 
 export const exceptionActionRequestSchema = z.object({
@@ -49,4 +50,5 @@ export const freezeReleaseRequestSchema = z.object({
 
 export type ClockRequest = z.infer<typeof clockRequestSchema>
 export type CreateDeviceRequest = z.infer<typeof createDeviceRequestSchema>
+export type DeviceRequest = z.infer<typeof deviceRequestSchema>
 export type ExceptionActionRequest = z.infer<typeof exceptionActionRequestSchema>

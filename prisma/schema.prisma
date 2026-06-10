@@ -43,6 +43,7 @@ enum AttendanceDeviceType {
 enum AttendanceDeviceStatus {
   PENDING
   ACTIVE
+  REJECTED
   SUSPENDED
   REMOVED
 }
@@ -259,21 +260,21 @@ model StaffingCompany {
 
 model AttendanceDevice {
   id                String                 @id @default(cuid())
-  organizationId    String
-  propertyId        String
+  organizationId    String?
+  propertyId        String?
   deviceName        String
-  deviceCode        String                 @unique
+  deviceCode        String?                @unique
   deviceType        AttendanceDeviceType
-  registrationToken String                 @unique
   deviceFingerprint Json?
+  fingerprintHash   String                 @unique
   status            AttendanceDeviceStatus @default(PENDING)
   registeredAt      DateTime?
   lastSeenAt        DateTime?
   createdAt         DateTime               @default(now())
   updatedAt         DateTime               @updatedAt
 
-  organization      Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  property          Property           @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  organization      Organization?      @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  property          Property?          @relation(fields: [propertyId], references: [id], onDelete: SetNull)
   attendanceRecords AttendanceRecord[]
 
   @@index([organizationId])

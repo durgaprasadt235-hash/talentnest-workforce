@@ -1,8 +1,9 @@
-import { randomBytes } from "node:crypto"
+import { createHash, randomBytes } from "node:crypto"
 
 import {
   AttendanceAlertType,
   AttendanceDeviceStatus,
+  AttendanceDeviceType,
   AttendanceExceptionStatus,
   AttendanceExceptionType,
   AttendanceFreezeStatus,
@@ -19,6 +20,7 @@ import { calculateDistanceMeters } from "@/src/lib/attendance/distance"
 import type {
   ClockRequest,
   CreateDeviceRequest,
+  DeviceRequest,
   ExceptionActionRequest,
 } from "@/src/lib/attendance/types"
 import { prisma } from "@/src/lib/prisma"
@@ -29,6 +31,17 @@ const HOUR_MS = 60 * 60 * 1000
 
 function generateSecureCode(bytes = 18) {
   return randomBytes(bytes).toString("base64url")
+}
+
+function fingerprintHash(fingerprint: Record<string, unknown>) {
+  const normalized = Object.keys(fingerprint)
+    .sort()
+    .reduce<Record<string, unknown>>((result, key) => {
+      result[key] = fingerprint[key]
+      return result
+    }, {})
+
+  return createHash("sha256").update(JSON.stringify(normalized)).digest("hex")
 }
 
 async function audit(
@@ -73,7 +86,15 @@ export async function listDeviceOptions() {
   return { organizations, properties }
 }
 
-export async function createDevice(input: CreateDeviceRequest) {
+export async function approveDevice(input: CreateDeviceRequest) {
+  const device = await prisma.attendanceDevice.findUnique({
+    where: { id: input.deviceId },
+  })
+
+  if (!device || device.status !== AttendanceDeviceStatus.PENDING) {
+    throw new Error("Pending device request was not found.")
+  }
+
   const property = await prisma.property.findFirst({
     where: {
       id: input.propertyId,
@@ -85,66 +106,92 @@ export async function createDevice(input: CreateDeviceRequest) {
     throw new Error("The selected property does not belong to the organization.")
   }
 
-  const device = await prisma.attendanceDevice.create({
-    data: {
-      ...input,
-      deviceCode: `TN-${generateSecureCode(6).toUpperCase()}`,
-      registrationToken: generateSecureCode(),
-    },
-  })
-
-  await audit(
-    "ATTENDANCE_DEVICE_CREATED",
-    "AttendanceDevice",
-    device.id,
-    device.organizationId,
-    device.propertyId,
-  )
-
-  return device
-}
-
-export async function activateDevice(
-  registrationToken: string,
-  fingerprint: Record<string, unknown>,
-) {
-  const device = await prisma.attendanceDevice.findUnique({
-    where: { registrationToken },
-    include: { property: true },
-  })
-
-  if (!device || device.status === AttendanceDeviceStatus.REMOVED) {
-    throw new Error("Registration token is invalid.")
-  }
-
-  const activated = await prisma.attendanceDevice.update({
+  const approved = await prisma.attendanceDevice.update({
     where: { id: device.id },
     data: {
-      deviceFingerprint: fingerprint as Prisma.InputJsonValue,
+      organizationId: input.organizationId,
+      propertyId: input.propertyId,
+      deviceCode: `TN-${generateSecureCode(6).toUpperCase()}`,
       status: AttendanceDeviceStatus.ACTIVE,
       registeredAt: new Date(),
-      lastSeenAt: new Date(),
     },
-    include: { property: true },
+    include: { organization: true, property: true },
   })
 
   await audit(
-    "ATTENDANCE_DEVICE_ACTIVATED",
+    "ATTENDANCE_DEVICE_APPROVED",
     "AttendanceDevice",
-    device.id,
-    device.organizationId,
-    device.propertyId,
-    { fingerprint },
+    approved.id,
+    approved.organizationId ?? undefined,
+    approved.propertyId ?? undefined,
   )
 
-  return activated
+  return approved
 }
 
-export async function getDevice(deviceCode: string) {
-  return prisma.attendanceDevice.findUnique({
-    where: { deviceCode },
-    include: { property: true },
+export async function requestDevice(input: DeviceRequest) {
+  const hash = fingerprintHash(input.fingerprint)
+  const existing = await prisma.attendanceDevice.findUnique({
+    where: { fingerprintHash: hash },
+    include: { organization: true, property: true },
   })
+
+  if (existing) {
+    if (existing.status === AttendanceDeviceStatus.ACTIVE) {
+      await prisma.attendanceDevice.update({
+        where: { id: existing.id },
+        data: { lastSeenAt: new Date() },
+      })
+    }
+    return existing
+  }
+
+  const platform =
+    typeof input.fingerprint.platform === "string"
+      ? input.fingerprint.platform
+      : "Browser"
+  const pending = await prisma.attendanceDevice.create({
+    data: {
+      deviceName: `${platform} attendance kiosk`,
+      deviceType: AttendanceDeviceType.KIOSK,
+      deviceFingerprint: input.fingerprint as Prisma.InputJsonValue,
+      fingerprintHash: hash,
+      status: AttendanceDeviceStatus.PENDING,
+      lastSeenAt: new Date(),
+    },
+    include: { organization: true, property: true },
+  })
+
+  await audit(
+    "ATTENDANCE_DEVICE_REQUESTED",
+    "AttendanceDevice",
+    pending.id,
+    undefined,
+    undefined,
+    { fingerprintHash: hash },
+  )
+
+  return pending
+}
+
+export async function rejectDevice(deviceId: string) {
+  const device = await prisma.attendanceDevice.findUnique({
+    where: { id: deviceId },
+  })
+
+  if (!device || device.status !== AttendanceDeviceStatus.PENDING) {
+    throw new Error("Pending device request was not found.")
+  }
+
+  const rejected = await prisma.attendanceDevice.update({
+    where: { id: device.id },
+    data: { status: AttendanceDeviceStatus.REJECTED },
+    include: { organization: true, property: true },
+  })
+
+  await audit("ATTENDANCE_DEVICE_REJECTED", "AttendanceDevice", rejected.id)
+
+  return rejected
 }
 
 async function getKioskContext(input: ClockRequest, requireActive = false) {
@@ -155,15 +202,30 @@ async function getKioskContext(input: ClockRequest, requireActive = false) {
     },
   })
 
-  if (!device || device.status !== AttendanceDeviceStatus.ACTIVE) {
-    await audit("CLOCK_ATTEMPT_BLOCKED", "AttendanceDevice", device?.id, device?.organizationId, device?.propertyId, {
+  if (
+    !device ||
+    device.status !== AttendanceDeviceStatus.ACTIVE ||
+    !device.organizationId ||
+    !device.propertyId ||
+    !device.deviceCode ||
+    !device.property
+  ) {
+    await audit("CLOCK_ATTEMPT_BLOCKED", "AttendanceDevice", device?.id, device?.organizationId ?? undefined, device?.propertyId ?? undefined, {
       reason: AttendanceExceptionType.DEVICE_NOT_REGISTERED,
     })
     throw new Error("This device is not registered or active.")
   }
 
+  const activeDevice = {
+    ...device,
+    organizationId: device.organizationId,
+    propertyId: device.propertyId,
+    deviceCode: device.deviceCode,
+    property: device.property,
+  }
+
   await prisma.attendanceDevice.update({
-    where: { id: device.id },
+    where: { id: activeDevice.id },
     data: { lastSeenAt: new Date() },
   })
 
@@ -172,7 +234,7 @@ async function getKioskContext(input: ClockRequest, requireActive = false) {
   })
 
   if (!employee || !employee.clockPinHash || !(await verifyPin(input.pin, employee.clockPinHash))) {
-    await audit("CLOCK_ATTEMPT_BLOCKED", "Employee", employee?.id, device.organizationId, device.propertyId, {
+    await audit("CLOCK_ATTEMPT_BLOCKED", "Employee", employee?.id, activeDevice.organizationId, activeDevice.propertyId, {
       reason: "INVALID_EMPLOYEE_OR_PIN",
       employeeNumber: input.employeeNumber,
     })
@@ -180,14 +242,14 @@ async function getKioskContext(input: ClockRequest, requireActive = false) {
   }
 
   if (requireActive && employee.status !== EmployeeStatus.ACTIVE) {
-    await audit("CLOCK_IN_BLOCKED", "Employee", employee.id, device.organizationId, device.propertyId, {
+    await audit("CLOCK_IN_BLOCKED", "Employee", employee.id, activeDevice.organizationId, activeDevice.propertyId, {
       reason: "EMPLOYEE_NOT_ACTIVE",
       status: employee.status,
     })
     throw new Error("Clock-in blocked. Employee is not active.")
   }
 
-  return { device, employee }
+  return { device: activeDevice, employee }
 }
 
 export async function clockIn(input: ClockRequest) {

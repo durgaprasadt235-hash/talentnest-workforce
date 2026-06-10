@@ -1,14 +1,37 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
-import { Camera, LogIn, LogOut } from "lucide-react"
+import { useCallback, useEffect, useRef, useState } from "react"
+import { Camera, LogIn, LogOut, RefreshCw } from "lucide-react"
 
 import { StatusMessage } from "@/components/attendance/status-message"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 
-type DeviceInfo = { deviceCode: string; property: { name: string }; status: string }
+type DeviceInfo = {
+  id: string
+  deviceCode: string | null
+  status: "PENDING" | "ACTIVE" | "REJECTED" | "SUSPENDED" | "REMOVED"
+  property: { name: string } | null
+}
+
+const INSTALLATION_ID_KEY = "talentnest-kiosk-installation-id"
+
+function getBrowserFingerprint() {
+  let installationId = localStorage.getItem(INSTALLATION_ID_KEY)
+  if (!installationId) {
+    installationId = crypto.randomUUID()
+    localStorage.setItem(INSTALLATION_ID_KEY, installationId)
+  }
+
+  return {
+    installationId,
+    userAgent: navigator.userAgent,
+    platform: navigator.platform,
+    language: navigator.language,
+    screenSize: `${window.screen.width}x${window.screen.height}`,
+  }
+}
 
 export function KioskClock() {
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -21,20 +44,33 @@ export function KioskClock() {
   const [error, setError] = useState(false)
   const [busy, setBusy] = useState(false)
 
+  const checkDevice = useCallback(async () => {
+    const response = await fetch("/api/attendance/devices/request", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ fingerprint: getBrowserFingerprint() }),
+    })
+    const data = await response.json()
+    if (!response.ok) throw new Error(data.error)
+    setDevice(data.device)
+  }, [])
+
   useEffect(() => {
-    const deviceCode = localStorage.getItem("talentnest-device-code")
-    if (!deviceCode) return
-    fetch(`/api/attendance/devices/${encodeURIComponent(deviceCode)}`)
-      .then(async (response) => {
-        const data = await response.json()
-        if (!response.ok) throw new Error(data.error)
-        setDevice(data.device)
-      })
-      .catch((caught: Error) => {
+    // Initial device request and 30-second approval polling are client-only.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    checkDevice().catch((caught: Error) => {
+      setError(true)
+      setMessage(caught.message)
+    })
+    const interval = window.setInterval(() => {
+      checkDevice().catch((caught: Error) => {
         setError(true)
         setMessage(caught.message)
       })
-  }, [])
+    }, 30_000)
+
+    return () => window.clearInterval(interval)
+  }, [checkDevice])
 
   async function startCamera() {
     try {
@@ -72,9 +108,9 @@ export function KioskClock() {
   }
 
   async function clock(action: "clock-in" | "clock-out") {
-    if (!device) {
+    if (!device?.deviceCode || device.status !== "ACTIVE") {
       setError(true)
-      return setMessage("This kiosk is not registered. Complete device registration first.")
+      return setMessage("This kiosk is waiting for device approval.")
     }
     if (!photoUrl) {
       setError(true)
@@ -111,11 +147,19 @@ export function KioskClock() {
     }
   }
 
+  if (!device || device.status === "PENDING") {
+    return <DeviceState title="Waiting for device approval" description="A device approval request was sent automatically. This kiosk checks for approval every 30 seconds." onRefresh={() => checkDevice()} />
+  }
+
+  if (device.status !== "ACTIVE" || !device.deviceCode || !device.property) {
+    return <DeviceState title="Device approval unavailable" description={device.status === "REJECTED" ? "This device request was rejected. Contact a manager to review the request." : "This device is not active. Contact a manager for assistance."} onRefresh={() => checkDevice()} />
+  }
+
   return (
     <div className="mx-auto max-w-4xl space-y-6">
       <div className="text-center">
         <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">TalentNest Workforce Attendance Kiosk</h1>
-        <p className="mt-2 text-muted-foreground">{device ? device.property.name : "Device registration required"}</p>
+        <p className="mt-2 text-muted-foreground">{device.property.name}</p>
       </div>
       <Card>
         <CardContent className="grid gap-6 p-6 lg:grid-cols-2">
@@ -144,6 +188,31 @@ export function KioskClock() {
         Photo evidence only. Facial recognition and face-match verification are not enabled.
       </p>
       {/* TODO: add opt-in face-match verification only after legal, privacy, and biometric-consent review. */}
+    </div>
+  )
+}
+
+function DeviceState({
+  title,
+  description,
+  onRefresh,
+}: {
+  title: string
+  description: string
+  onRefresh: () => void
+}) {
+  return (
+    <div className="mx-auto flex min-h-[34rem] max-w-xl items-center">
+      <Card className="w-full">
+        <CardContent className="space-y-5 p-8 text-center">
+          <RefreshCw className="mx-auto size-10 text-primary" />
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">{description}</p>
+          </div>
+          <Button variant="outline" onClick={onRefresh}><RefreshCw /> Check now</Button>
+        </CardContent>
+      </Card>
     </div>
   )
 }
