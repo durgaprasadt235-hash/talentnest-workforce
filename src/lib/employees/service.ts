@@ -12,7 +12,10 @@ import type {
   UpdateEmployeeInput,
 } from "@/src/lib/employees/validation"
 import { prisma } from "@/src/lib/prisma"
-import { hashPin } from "@/src/lib/security/pin"
+import { hashPin, verifyPin } from "@/src/lib/security/pin"
+
+const DUPLICATE_PIN_ERROR =
+  "This PIN is already assigned to another active employee. Choose a different PIN."
 
 const employeeSelect = {
   id: true,
@@ -80,9 +83,13 @@ export async function listEmployees(
 
 export async function createEmployee(input: CreateEmployeeInput) {
   await validateAssignments(input)
+  await ensureUniqueActivePin(input.organizationId, input.pin)
 
   const employee = await prisma.employee.create({
-    data: normalizeEmployeeInput(input),
+    data: {
+      ...normalizeEmployeeInput(input),
+      clockPinHash: await hashPin(input.pin),
+    },
     select: employeeSelect,
   })
 
@@ -120,12 +127,24 @@ export async function updateEmployee(id: string, input: UpdateEmployeeInput) {
 }
 
 export async function setEmployeeStatus(id: string, status: EmployeeStatus) {
+  const existing = await prisma.employee.findUnique({
+    where: { id },
+    select: { organizationId: true, clockPinHash: true },
+  })
+  if (!existing) throw new Error("Employee not found.")
+  if (status === EmployeeStatus.ACTIVE) {
+    if (!existing.clockPinHash) {
+      throw new Error("Assign a 4-digit PIN before reactivating this employee.")
+    }
+  }
+
   const employee = await prisma.employee.update({
     where: { id },
     data: {
       status,
       terminatedAt: status === EmployeeStatus.ACTIVE ? null : undefined,
       terminationReason: status === EmployeeStatus.ACTIVE ? null : undefined,
+      clockPinHash: status === EmployeeStatus.INACTIVE ? null : undefined,
     },
     select: employeeSelect,
   })
@@ -152,6 +171,7 @@ export async function terminateEmployee(id: string, reason: string) {
       status: EmployeeStatus.TERMINATED,
       terminatedAt: new Date(),
       terminationReason: reason,
+      clockPinHash: null,
     },
     select: employeeSelect,
   })
@@ -169,6 +189,13 @@ export async function terminateEmployee(id: string, reason: string) {
 }
 
 export async function resetEmployeePin(id: string, pin: string) {
+  const existing = await prisma.employee.findUnique({
+    where: { id },
+    select: { organizationId: true },
+  })
+  if (!existing) throw new Error("Employee not found.")
+  await ensureUniqueActivePin(existing.organizationId, pin, id)
+
   const employee = await prisma.employee.update({
     where: { id },
     data: { clockPinHash: await hashPin(pin) },
@@ -242,7 +269,11 @@ export async function deleteEmployee(id: string) {
 
 function normalizeEmployeeInput(input: CreateEmployeeInput | UpdateEmployeeInput) {
   return {
-    ...input,
+    organizationId: input.organizationId,
+    employeeNumber: input.employeeNumber,
+    firstName: input.firstName,
+    lastName: input.lastName,
+    employmentType: input.employmentType,
     propertyId: input.propertyId || null,
     departmentId: input.departmentId || null,
     position: input.position || null,
@@ -251,6 +282,28 @@ function normalizeEmployeeInput(input: CreateEmployeeInput | UpdateEmployeeInput
         ? input.staffingCompanyId || null
         : null,
   }
+}
+
+async function ensureUniqueActivePin(
+  organizationId: string,
+  pin: string,
+  excludedEmployeeId?: string,
+) {
+  const employees = await prisma.employee.findMany({
+    where: {
+      organizationId,
+      status: {
+        notIn: [EmployeeStatus.INACTIVE, EmployeeStatus.TERMINATED],
+      },
+      clockPinHash: { not: null },
+      id: excludedEmployeeId ? { not: excludedEmployeeId } : undefined,
+    },
+    select: { clockPinHash: true },
+  })
+  const matches = await Promise.all(
+    employees.map((employee) => verifyPin(pin, employee.clockPinHash!)),
+  )
+  if (matches.some(Boolean)) throw new Error(DUPLICATE_PIN_ERROR)
 }
 
 async function validateAssignments(

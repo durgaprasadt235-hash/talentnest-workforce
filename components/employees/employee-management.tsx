@@ -78,6 +78,7 @@ type EmployeeForm = {
   lastName: string
   employmentType: EmploymentType
   position: string
+  pin: string
 }
 
 const emptyData: EmployeeData = {
@@ -100,6 +101,7 @@ const emptyForm: EmployeeForm = {
   lastName: "",
   employmentType: "DIRECT",
   position: "",
+  pin: "",
 }
 
 const employmentTypes: EmploymentType[] = [
@@ -210,6 +212,7 @@ export function EmployeeManagement() {
       lastName: employee.lastName,
       employmentType: employee.employmentType,
       position: employee.position ?? "",
+      pin: "",
     })
     setPinEmployee(null)
     setEmployeeFormOpen(true)
@@ -219,6 +222,9 @@ export function EmployeeManagement() {
 
   async function submitEmployee(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    if (!editingId && !/^\d{4}$/.test(form.pin)) {
+      return setError("PIN must be exactly 4 digits.")
+    }
     setBusy(true)
     setError("")
     setMessage("")
@@ -230,6 +236,7 @@ export function EmployeeManagement() {
         headers: { "content-type": "application/json", ...requestHeaders },
         body: JSON.stringify({
           ...form,
+          pin: editingId ? undefined : form.pin,
           propertyId: form.propertyId || null,
           departmentId: form.departmentId || null,
           staffingCompanyId: form.staffingCompanyId || null,
@@ -359,6 +366,7 @@ export function EmployeeManagement() {
               </SheetDescription>
             </SheetHeader>
             <form onSubmit={submitEmployee} className="grid gap-4 px-4 sm:grid-cols-2">
+              {error && <p className="text-sm text-destructive sm:col-span-2">{error}</p>}
               <Input
                 value={form.employeeNumber}
                 onChange={(event) => updateForm("employeeNumber", event.target.value)}
@@ -382,6 +390,18 @@ export function EmployeeManagement() {
                 onChange={(event) => updateForm("position", event.target.value)}
                 placeholder="Position"
               />
+              {!editingId && (
+                <Input
+                  value={form.pin}
+                  onChange={(event) => updateForm("pin", event.target.value.replace(/\D/g, "").slice(0, 4))}
+                  placeholder="Required 4-digit kiosk PIN"
+                  type="password"
+                  inputMode="numeric"
+                  pattern="\d{4}"
+                  maxLength={4}
+                  required
+                />
+              )}
               <select
                 className={selectClass}
                 value={form.employmentType}
@@ -463,8 +483,9 @@ export function EmployeeManagement() {
               </SheetDescription>
             </SheetHeader>
             <form onSubmit={resetPin} className="grid gap-4 px-4">
-              <Input name="pin" type="password" inputMode="numeric" placeholder="New PIN" required />
-              <Input name="confirmPin" type="password" inputMode="numeric" placeholder="Confirm new PIN" required />
+              {error && <p className="text-sm text-destructive">{error}</p>}
+              <Input name="pin" type="password" inputMode="numeric" pattern="\d{4}" maxLength={4} placeholder="New 4-digit PIN" required />
+              <Input name="confirmPin" type="password" inputMode="numeric" pattern="\d{4}" maxLength={4} placeholder="Confirm new 4-digit PIN" required />
               <SheetFooter className="px-0">
                 <Button disabled={busy}>{busy ? "Resetting..." : "Reset PIN"}</Button>
                 <Button type="button" variant="outline" onClick={() => setPinEmployee(null)}>
@@ -618,7 +639,7 @@ export function EmployeeManagement() {
                         <Button size="sm" variant="outline" onClick={() => startEdit(employee)}>
                           <Pencil /> Edit
                         </Button>
-                        <Button size="sm" variant="outline" onClick={() => setPinEmployee(employee)}>
+                        <Button size="sm" variant="outline" onClick={() => { setError(""); setPinEmployee(employee) }}>
                           <KeyRound /> Reset PIN
                         </Button>
                         <Button

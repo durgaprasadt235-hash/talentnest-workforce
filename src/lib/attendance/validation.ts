@@ -13,8 +13,7 @@ const locationSchema = z.object({
 
 export const clockRequestSchema = z.object({
   deviceCode: trimmedString.max(100),
-  employeeNumber: trimmedString.max(100),
-  pin: z.string().min(1).max(100),
+  pin: z.string().regex(/^\d{4}$/),
   photoUrl: z.string().max(2_000_000).optional(),
   location: locationSchema.optional(),
 })
@@ -32,8 +31,7 @@ export const deviceRequestSchema = z.object({
 
 export const kioskEmployeeVerificationSchema = z.object({
   deviceCode: trimmedString.max(100),
-  employeeNumber: trimmedString.max(100),
-  pin: z.string().min(1).max(100),
+  pin: z.string().regex(/^\d{4}$/),
 })
 
 export const attendanceCorrectionRequestSchema = kioskEmployeeVerificationSchema.extend({

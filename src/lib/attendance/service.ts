@@ -202,7 +202,7 @@ export async function rejectDevice(deviceId: string) {
   return rejected
 }
 
-async function getKioskContext(input: ClockRequest, requireActive = false) {
+async function getKioskContext(input: ClockRequest) {
   const device = await prisma.attendanceDevice.findUnique({
     where: { deviceCode: input.deviceCode },
     include: {
@@ -237,7 +237,7 @@ async function getKioskContext(input: ClockRequest, requireActive = false) {
     data: { lastSeenAt: new Date() },
   })
 
-  const employee = await validateKioskEmployee(activeDevice, input, requireActive)
+  const employee = await validateKioskEmployee(activeDevice, input)
 
   return { device: activeDevice, employee }
 }
@@ -260,7 +260,6 @@ export async function verifyKioskEmployee(input: KioskEmployeeVerification) {
   const employee = await validateKioskEmployee(
     { organizationId: device.organizationId, propertyId: device.propertyId },
     input,
-    true,
   )
   const now = new Date()
   const startOfDay = new Date(now)
@@ -301,7 +300,6 @@ export async function verifyKioskEmployee(input: KioskEmployeeVerification) {
   return {
     employee: {
       id: employee.id,
-      employeeNumber: employee.employeeNumber,
       firstName: employee.firstName,
       lastName: employee.lastName,
       position: employee.position,
@@ -330,7 +328,6 @@ export async function createAttendanceCorrectionRequest(
   const employee = await validateKioskEmployee(
     { organizationId: device.organizationId, propertyId: device.propertyId },
     input,
-    true,
   )
 
   let attendanceRecordId = input.attendanceRecordId
@@ -387,34 +384,43 @@ async function validateKioskEmployee(
     propertyId: string
   },
   input: KioskEmployeeVerification,
-  requireActive: boolean,
 ) {
-  const employee = await prisma.employee.findUnique({
-    where: { employeeNumber: input.employeeNumber },
+  const employees = await prisma.employee.findMany({
+    where: {
+      organizationId: device.organizationId,
+      propertyId: device.propertyId,
+      status: EmployeeStatus.ACTIVE,
+      clockPinHash: { not: null },
+    },
   })
+  const matchResults = await Promise.all(
+    employees.map(async (employee) => ({
+      employee,
+      matches: await verifyPin(input.pin, employee.clockPinHash!),
+    })),
+  )
+  const matches = matchResults
+    .filter((result) => result.matches)
+    .map((result) => result.employee)
 
-  if (!employee || !employee.clockPinHash || !(await verifyPin(input.pin, employee.clockPinHash))) {
-    await audit("CLOCK_ATTEMPT_BLOCKED", "Employee", employee?.id, device.organizationId, device.propertyId, {
-      reason: "INVALID_EMPLOYEE_OR_PIN",
-      employeeNumber: input.employeeNumber,
+  if (matches.length === 0) {
+    await audit("CLOCK_ATTEMPT_BLOCKED", "AttendanceDevice", undefined, device.organizationId, device.propertyId, {
+      reason: "INVALID_PIN",
     })
-    throw new Error("Invalid Employee ID or PIN.")
+    throw new Error("Invalid PIN.")
   }
-  if (requireActive && employee.status !== EmployeeStatus.ACTIVE) {
-    throw new Error("Employee is not active. Contact manager.")
+  if (matches.length > 1) {
+    await audit("CLOCK_ATTEMPT_BLOCKED", "AttendanceDevice", undefined, device.organizationId, device.propertyId, {
+      reason: "PIN_CONFLICT",
+    })
+    throw new Error("PIN conflict. Contact manager.")
   }
-  if (
-    employee.organizationId !== device.organizationId ||
-    employee.propertyId !== device.propertyId
-  ) {
-    throw new Error("Invalid Employee ID or PIN.")
-  }
-  return employee
+  return matches[0]
 }
 
 export async function clockIn(input: ClockRequest) {
   const now = new Date()
-  const { device, employee } = await getKioskContext(input, true)
+  const { device, employee } = await getKioskContext(input)
 
   const freeze = await prisma.attendanceFreeze.findFirst({
     where: {
@@ -554,7 +560,7 @@ export async function clockIn(input: ClockRequest) {
 
 export async function clockOut(input: ClockRequest) {
   const now = new Date()
-  const { device, employee } = await getKioskContext(input, true)
+  const { device, employee } = await getKioskContext(input)
   const record = await prisma.attendanceRecord.findFirst({
     where: {
       employeeId: employee.id,
