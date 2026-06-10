@@ -7,17 +7,43 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { useCurrentUser } from "@/components/rbac/current-user-provider"
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet"
 import { Table, TableCell, TableHead } from "@/components/ui/table"
 import { mockRoleHeaders } from "@/src/lib/rbac/mock-auth"
 
 type Employee = { firstName: string; lastName: string; employeeNumber: string }
 type Property = { name: string }
-type OpenRecord = { id: string; status: string; exceptionType?: string; managerApprovalStatus: string; clockInAt?: string; employee: Employee; property: Property }
+type AttendanceRecord = {
+  id: string
+  status: string
+  exceptionType: string | null
+  managerApprovalStatus: string
+  clockInAt: string | null
+  clockOutAt: string | null
+  clockInPhotoUrl: string | null
+  clockOutPhotoUrl: string | null
+  clockInLatitude: number | null
+  clockInLongitude: number | null
+  clockOutLatitude: number | null
+  clockOutLongitude: number | null
+  createdAt: string
+  updatedAt: string
+  employee: Employee
+  property: Property
+  department: { name: string } | null
+  device: { deviceName: string; deviceCode: string | null }
+}
 type Exception = { id: string; exceptionType: string; reason: string; employee: Employee; property: Property }
 type Freeze = { id: string; reason: string; employee: Employee; property: Property }
 type Alert = { id: string; alertType: string; recipientRole: string; message: string; status: string }
 type Correction = { id: string; correctionType: string; reason: string; employee: Employee; property: Property }
-type AdminData = { openRecords: OpenRecord[]; exceptions: Exception[]; freezes: Freeze[]; alerts: Alert[]; correctionRequests: Correction[] }
+type AdminData = { openRecords: AttendanceRecord[]; exceptions: Exception[]; freezes: Freeze[]; alerts: Alert[]; correctionRequests: Correction[] }
 
 const emptyData: AdminData = { openRecords: [], exceptions: [], freezes: [], alerts: [], correctionRequests: [] }
 
@@ -27,6 +53,8 @@ export function AttendanceAdmin() {
   const [note, setNote] = useState("")
   const [message, setMessage] = useState("")
   const [error, setError] = useState("")
+  const [selectedRecord, setSelectedRecord] = useState<AttendanceRecord | null>(null)
+  const [previewPhoto, setPreviewPhoto] = useState<{ src: string; label: string } | null>(null)
 
   const load = useCallback(async () => {
     const response = await fetch("/api/attendance/admin", {
@@ -122,15 +150,52 @@ export function AttendanceAdmin() {
         ))}
       </AdminTable>
 
-      <AdminTable title="Recent attendance records" empty="No attendance records." headers={["Employee", "Property", "Clock in", "Exception", "Manager approval", "Status"]}>
+      <AdminTable
+        title="Recent attendance records"
+        empty="No attendance records."
+        headers={[
+          "Employee",
+          "Property",
+          "Department",
+          "Clock In",
+          "Clock Out",
+          "Total Hours",
+          "Clock In Photo",
+          "Clock Out Photo",
+          "Exception",
+          "Manager Approval",
+          "Status",
+          "Device",
+          "Actions",
+        ]}
+      >
         {data.openRecords.map((item) => (
           <tr key={item.id}>
-            <TableCell>{item.employee.firstName} {item.employee.lastName}</TableCell>
-            <TableCell>{item.property.name}</TableCell>
-            <TableCell>{item.clockInAt ? new Date(item.clockInAt).toLocaleString() : "Pending"}</TableCell>
+            <TableCell className="whitespace-nowrap">{employeeName(item.employee)}</TableCell>
+            <TableCell className="whitespace-nowrap">{item.property.name}</TableCell>
+            <TableCell className="whitespace-nowrap">{item.department?.name ?? "--"}</TableCell>
+            <TableCell className="whitespace-nowrap">{formatTimestamp(item.clockInAt, "Pending")}</TableCell>
+            <TableCell className="whitespace-nowrap">{formatTimestamp(item.clockOutAt, "Still clocked in")}</TableCell>
+            <TableCell className="whitespace-nowrap">{formatTotalHours(item)}</TableCell>
+            <TableCell>
+              <PhotoThumbnail
+                src={item.clockInPhotoUrl}
+                label={`Clock-in photo for ${employeeName(item.employee)}`}
+                onPreview={setPreviewPhoto}
+              />
+            </TableCell>
+            <TableCell>
+              <PhotoThumbnail
+                src={item.clockOutPhotoUrl}
+                label={`Clock-out photo for ${employeeName(item.employee)}`}
+                onPreview={setPreviewPhoto}
+              />
+            </TableCell>
             <TableCell>{item.exceptionType ? <Badge>{formatException(item.exceptionType)}</Badge> : "None"}</TableCell>
-            <TableCell><Badge>{item.managerApprovalStatus.replaceAll("_", " ")}</Badge></TableCell>
+            <TableCell><Badge>{formatEnum(item.managerApprovalStatus)}</Badge></TableCell>
             <TableCell><Badge>{item.status}</Badge></TableCell>
+            <TableCell className="whitespace-nowrap">{item.device.deviceName}</TableCell>
+            <TableCell><Button size="sm" variant="outline" onClick={() => setSelectedRecord(item)}>View</Button></TableCell>
           </tr>
         ))}
       </AdminTable>
@@ -157,6 +222,13 @@ export function AttendanceAdmin() {
         ))}
       </AdminTable>
       <p className="text-sm text-muted-foreground">Attendance alerts are stored in-app. Email, SMS, and push delivery will be added later.</p>
+
+      <AttendanceDetails
+        record={selectedRecord}
+        onOpenChange={(open) => !open && setSelectedRecord(null)}
+        onPreview={setPreviewPhoto}
+      />
+      <PhotoPreview photo={previewPhoto} onOpenChange={(open) => !open && setPreviewPhoto(null)} />
     </div>
   )
 }
@@ -164,7 +236,168 @@ export function AttendanceAdmin() {
 function formatException(exceptionType: string) {
   return exceptionType === "UNSCHEDULED_CLOCK_IN"
     ? "Unscheduled clock-in"
-    : exceptionType.replaceAll("_", " ")
+    : formatEnum(exceptionType)
+}
+
+function formatEnum(value: string) {
+  return value.replaceAll("_", " ")
+}
+
+function employeeName(employee: Employee) {
+  return `${employee.firstName} ${employee.lastName}`
+}
+
+function formatTimestamp(value: string | null, fallback = "--") {
+  return value ? new Date(value).toLocaleString() : fallback
+}
+
+function formatTotalHours(record: Pick<AttendanceRecord, "clockInAt" | "clockOutAt">) {
+  if (!record.clockInAt || !record.clockOutAt) return "--"
+
+  const milliseconds = new Date(record.clockOutAt).getTime() - new Date(record.clockInAt).getTime()
+  return `${(Math.max(milliseconds, 0) / 3_600_000).toFixed(2)} hrs`
+}
+
+function formatCoordinates(latitude: number | null, longitude: number | null) {
+  return latitude === null || longitude === null ? "--" : `${latitude}, ${longitude}`
+}
+
+function PhotoThumbnail({
+  src,
+  label,
+  onPreview,
+}: {
+  src: string | null
+  label: string
+  onPreview: (photo: { src: string; label: string }) => void
+}) {
+  if (!src) return <span className="text-muted-foreground">--</span>
+
+  return (
+    <button
+      type="button"
+      className="block overflow-hidden rounded-md border transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      onClick={() => onPreview({ src, label })}
+      aria-label={`Open ${label}`}
+    >
+      {/* Attendance photos may be data URLs or externally stored URLs. */}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={src} alt={label} className="size-12 object-cover" />
+    </button>
+  )
+}
+
+function AttendanceDetails({
+  record,
+  onOpenChange,
+  onPreview,
+}: {
+  record: AttendanceRecord | null
+  onOpenChange: (open: boolean) => void
+  onPreview: (photo: { src: string; label: string }) => void
+}) {
+  return (
+    <Sheet open={Boolean(record)} onOpenChange={onOpenChange}>
+      <SheetContent className="overflow-y-auto sm:max-w-2xl">
+        <SheetHeader>
+          <SheetTitle>Attendance record details</SheetTitle>
+          <SheetDescription>Recorded punch, employee, device, and review information.</SheetDescription>
+        </SheetHeader>
+        {record && (
+          <div className="space-y-6 px-4 pb-6">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <DetailField label="Employee" value={employeeName(record.employee)} />
+              <DetailField label="Employee number" value={record.employee.employeeNumber} />
+              <DetailField label="Property" value={record.property.name} />
+              <DetailField label="Department" value={record.department?.name ?? "--"} />
+              <DetailField label="Device name" value={record.device.deviceName} />
+              <DetailField label="Device code" value={record.device.deviceCode ?? "--"} />
+              <DetailField label="Clock-in timestamp" value={formatTimestamp(record.clockInAt)} />
+              <DetailField label="Clock-out timestamp" value={formatTimestamp(record.clockOutAt, "Still clocked in")} />
+              <DetailField label="Total hours" value={formatTotalHours(record)} />
+              <DetailField label="Clock-in coordinates" value={formatCoordinates(record.clockInLatitude, record.clockInLongitude)} />
+              <DetailField label="Clock-out coordinates" value={formatCoordinates(record.clockOutLatitude, record.clockOutLongitude)} />
+              <DetailField label="Exception type" value={record.exceptionType ? formatException(record.exceptionType) : "None"} />
+              <DetailField label="Manager approval status" value={formatEnum(record.managerApprovalStatus)} />
+              <DetailField label="Attendance status" value={formatEnum(record.status)} />
+              <DetailField label="Created at" value={formatTimestamp(record.createdAt)} />
+              <DetailField label="Updated at" value={formatTimestamp(record.updatedAt)} />
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <DetailPhoto
+                src={record.clockInPhotoUrl}
+                label={`Clock-in photo for ${employeeName(record.employee)}`}
+                onPreview={onPreview}
+              />
+              <DetailPhoto
+                src={record.clockOutPhotoUrl}
+                label={`Clock-out photo for ${employeeName(record.employee)}`}
+                onPreview={onPreview}
+              />
+            </div>
+          </div>
+        )}
+      </SheetContent>
+    </Sheet>
+  )
+}
+
+function DetailField({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="space-y-1">
+      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
+      <p className="break-words">{value}</p>
+    </div>
+  )
+}
+
+function DetailPhoto({
+  src,
+  label,
+  onPreview,
+}: {
+  src: string | null
+  label: string
+  onPreview: (photo: { src: string; label: string }) => void
+}) {
+  return (
+    <div className="space-y-2">
+      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label.startsWith("Clock-in") ? "Clock-in photo" : "Clock-out photo"}</p>
+      {src ? (
+        <button type="button" className="block w-full overflow-hidden rounded-lg border" onClick={() => onPreview({ src, label })}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={src} alt={label} className="max-h-64 w-full object-contain" />
+        </button>
+      ) : (
+        <div className="flex h-32 items-center justify-center rounded-lg border bg-muted/30 text-sm text-muted-foreground">No photo recorded</div>
+      )}
+    </div>
+  )
+}
+
+function PhotoPreview({
+  photo,
+  onOpenChange,
+}: {
+  photo: { src: string; label: string } | null
+  onOpenChange: (open: boolean) => void
+}) {
+  return (
+    <Sheet open={Boolean(photo)} onOpenChange={onOpenChange}>
+      <SheetContent className="overflow-y-auto sm:max-w-3xl">
+        <SheetHeader>
+          <SheetTitle>Photo preview</SheetTitle>
+          <SheetDescription>{photo?.label}</SheetDescription>
+        </SheetHeader>
+        {photo && (
+          <div className="px-4 pb-6">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={photo.src} alt={photo.label} className="max-h-[80vh] w-full rounded-lg border object-contain" />
+          </div>
+        )}
+      </SheetContent>
+    </Sheet>
+  )
 }
 
 function AdminTable({

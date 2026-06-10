@@ -777,8 +777,16 @@ export async function getAttendanceAdminData() {
 
   const [recentRecords, exceptions, freezes, alerts, correctionRequests] = await Promise.all([
     prisma.attendanceRecord.findMany({
-      include: { employee: { select: employeeSelect }, property: true },
-      orderBy: { createdAt: "desc" },
+      include: {
+        employee: { select: employeeSelect },
+        property: { select: { name: true } },
+        department: { select: { name: true } },
+        device: { select: { deviceName: true, deviceCode: true } },
+      },
+      orderBy: [
+        { clockInAt: { sort: "desc", nulls: "last" } },
+        { createdAt: "desc" },
+      ],
       take: 100,
     }),
     prisma.attendanceException.findMany({
