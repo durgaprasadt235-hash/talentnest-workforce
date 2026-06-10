@@ -153,6 +153,7 @@ export function AttendanceAdmin() {
       <AdminTable
         title="Recent attendance records"
         empty="No attendance records."
+        scrollable
         headers={[
           "Employee",
           "Property",
@@ -170,7 +171,7 @@ export function AttendanceAdmin() {
         ]}
       >
         {data.openRecords.map((item) => (
-          <tr key={item.id}>
+          <tr key={item.id} className="h-[75px]">
             <TableCell className="whitespace-nowrap">{employeeName(item.employee)}</TableCell>
             <TableCell className="whitespace-nowrap">{item.property.name}</TableCell>
             <TableCell className="whitespace-nowrap">{item.department?.name ?? "--"}</TableCell>
@@ -405,11 +406,13 @@ function AdminTable({
   headers,
   children,
   empty,
+  scrollable = false,
 }: {
   title: string
   headers: string[]
   children: React.ReactNode
   empty: string
+  scrollable?: boolean
 }) {
   const hasRows = Array.isArray(children) ? children.length > 0 : Boolean(children)
 
@@ -417,8 +420,8 @@ function AdminTable({
     <Card>
       <CardHeader><h2 className="font-semibold">{title}</h2></CardHeader>
       <CardContent className="p-0">
-        <Table>
-          <thead><tr>{headers.map((header) => <TableHead key={header}>{header}</TableHead>)}</tr></thead>
+        <Table containerClassName={scrollable ? "max-h-[420px] overflow-auto" : undefined}>
+          <thead><tr>{headers.map((header) => <TableHead key={header} className={scrollable ? "sticky top-0 z-10 bg-muted" : undefined}>{header}</TableHead>)}</tr></thead>
           <tbody>{children}</tbody>
         </Table>
         {!hasRows && <p className="p-6 text-center text-sm text-muted-foreground">{empty}</p>}
