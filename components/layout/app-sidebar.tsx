@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation"
 import {
   Building2,
   CalendarDays,
+  CalendarCheck2,
   CircleDollarSign,
   ClipboardCheck,
   Clock3,
@@ -66,6 +67,7 @@ const navigation: { label?: string; items: NavItem[] }[] = [
       { label: "Attendance", href: "/attendance", icon: ClipboardCheck, permission: Permission.VIEW_ATTENDANCE },
       { label: "Attendance Kiosk", href: "/kiosk", icon: MonitorSmartphone, permission: Permission.VIEW_ATTENDANCE },
       { label: "Attendance Admin", href: "/attendance/admin", icon: ShieldCheck, permission: Permission.APPROVE_ATTENDANCE },
+      { label: "Weekly Attendance", href: "/weekly-attendance", icon: CalendarCheck2, permission: Permission.VIEW_WEEKLY_ATTENDANCE },
       { label: "Timesheets", href: "/timesheets", icon: Clock3, permission: Permission.VIEW_TIMESHEETS },
     ],
   },

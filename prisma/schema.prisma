@@ -117,31 +117,48 @@ enum AttendanceAlertStatus {
   FAILED
 }
 
-model Organization {
-  id        String   @id @default(cuid())
-  name      String
-  slug      String   @unique
-  status    RecordStatus @default(ACTIVE)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+enum WeeklyAttendanceBatchStatus {
+  DRAFT
+  PENDING_MANAGER_REVIEW
+  APPROVED
+  CORRECTIONS_REQUIRED
+  LOCKED
+}
 
-  properties           Property[]
-  departments          Department[]
-  employees            Employee[]
-  users                User[]
-  attendanceDevices    AttendanceDevice[]
-  propertyGeofences    PropertyGeofence[]
-  shifts               Shift[]
-  attendanceRecords    AttendanceRecord[]
-  attendanceExceptions AttendanceException[]
-  attendanceFreezes    AttendanceFreeze[]
-  attendanceAlerts     AttendanceAlert[]
-  auditLogs            AuditLog[]
-  staffingCompanies    StaffingCompany[]
+enum WeeklyAttendanceLineApprovalStatus {
+  PENDING
+  APPROVED
+  CORRECTION_REQUIRED
+  REJECTED
+}
+
+model Organization {
+  id        String       @id @default(cuid())
+  name      String
+  slug      String       @unique
+  status    RecordStatus @default(ACTIVE)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  properties              Property[]
+  departments             Department[]
+  employees               Employee[]
+  users                   User[]
+  attendanceDevices       AttendanceDevice[]
+  propertyGeofences       PropertyGeofence[]
+  shifts                  Shift[]
+  attendanceRecords       AttendanceRecord[]
+  attendanceExceptions    AttendanceException[]
+  attendanceFreezes       AttendanceFreeze[]
+  attendanceAlerts        AttendanceAlert[]
+  auditLogs               AuditLog[]
+  staffingCompanies       StaffingCompany[]
+  weeklyAttendanceBatches WeeklyAttendanceBatch[]
+  weeklyAttendanceLines   WeeklyAttendanceLine[]
 }
 
 model Property {
-  id             String   @id @default(cuid())
+  id             String       @id @default(cuid())
   organizationId String
   name           String
   code           String
@@ -150,51 +167,54 @@ model Property {
   city           String?
   state          String?
   zipCode        String?
-  timeZone       String   @default("America/New_York")
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  timeZone       String       @default("America/New_York")
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
 
-  organization         Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  departments          Department[]
-  employees            Employee[]
-  attendanceDevices    AttendanceDevice[]
-  geofences            PropertyGeofence[]
-  shifts               Shift[]
-  attendanceRecords    AttendanceRecord[]
-  attendanceExceptions AttendanceException[]
-  attendanceFreezes    AttendanceFreeze[]
-  attendanceAlerts     AttendanceAlert[]
-  auditLogs            AuditLog[]
+  organization            Organization            @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  departments             Department[]
+  employees               Employee[]
+  attendanceDevices       AttendanceDevice[]
+  geofences               PropertyGeofence[]
+  shifts                  Shift[]
+  attendanceRecords       AttendanceRecord[]
+  attendanceExceptions    AttendanceException[]
+  attendanceFreezes       AttendanceFreeze[]
+  attendanceAlerts        AttendanceAlert[]
+  auditLogs               AuditLog[]
+  weeklyAttendanceBatches WeeklyAttendanceBatch[]
+  weeklyAttendanceLines   WeeklyAttendanceLine[]
 
   @@index([organizationId])
 }
 
 model Department {
-  id             String   @id @default(cuid())
+  id             String       @id @default(cuid())
   organizationId String
   propertyId     String
   name           String
   code           String
   status         RecordStatus @default(ACTIVE)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
 
-  organization      Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  property          Property           @relation(fields: [propertyId], references: [id], onDelete: Cascade)
-  employees         Employee[]
-  shifts            Shift[]
-  attendanceRecords AttendanceRecord[]
+  organization          Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  property              Property               @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  employees             Employee[]
+  shifts                Shift[]
+  attendanceRecords     AttendanceRecord[]
+  weeklyAttendanceLines WeeklyAttendanceLine[]
 
   @@index([organizationId])
   @@index([propertyId])
 }
 
 model Employee {
-  id                String   @id @default(cuid())
+  id                String         @id @default(cuid())
   organizationId    String
   propertyId        String?
   departmentId      String?
-  employeeNumber    String   @unique
+  employeeNumber    String         @unique
   firstName         String
   lastName          String
   employmentType    EmploymentType
@@ -204,18 +224,19 @@ model Employee {
   terminationReason String?
   clockPinHash      String?
   staffingCompanyId String?
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
 
-  organization         Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  property             Property?             @relation(fields: [propertyId], references: [id], onDelete: SetNull)
-  department           Department?           @relation(fields: [departmentId], references: [id], onDelete: SetNull)
-  staffingCompany      StaffingCompany?      @relation(fields: [staffingCompanyId], references: [id], onDelete: SetNull)
-  shifts               Shift[]
-  attendanceRecords    AttendanceRecord[]
-  attendanceExceptions AttendanceException[]
-  attendanceFreezes    AttendanceFreeze[]
-  attendanceAlerts     AttendanceAlert[]
+  organization          Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  property              Property?              @relation(fields: [propertyId], references: [id], onDelete: SetNull)
+  department            Department?            @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  staffingCompany       StaffingCompany?       @relation(fields: [staffingCompanyId], references: [id], onDelete: SetNull)
+  shifts                Shift[]
+  attendanceRecords     AttendanceRecord[]
+  attendanceExceptions  AttendanceException[]
+  attendanceFreezes     AttendanceFreeze[]
+  attendanceAlerts      AttendanceAlert[]
+  weeklyAttendanceLines WeeklyAttendanceLine[]
 
   @@index([organizationId])
   @@index([propertyId])
@@ -224,38 +245,40 @@ model Employee {
 }
 
 model User {
-  id             String   @id @default(cuid())
+  id             String       @id @default(cuid())
   organizationId String?
-  email          String   @unique
+  email          String       @unique
   firstName      String
   lastName       String
   role           String
   status         RecordStatus @default(ACTIVE)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
 
-  organization        Organization?         @relation(fields: [organizationId], references: [id], onDelete: SetNull)
-  requestedExceptions AttendanceException[] @relation("RequestedBy")
-  approvedExceptions  AttendanceException[] @relation("ApprovedBy")
-  releasedFreezes     AttendanceFreeze[]    @relation("ReleasedBy")
-  auditLogs           AuditLog[]
+  organization                    Organization?           @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  requestedExceptions             AttendanceException[]   @relation("RequestedBy")
+  approvedExceptions              AttendanceException[]   @relation("ApprovedBy")
+  releasedFreezes                 AttendanceFreeze[]      @relation("ReleasedBy")
+  approvedWeeklyAttendanceBatches WeeklyAttendanceBatch[] @relation("WeeklyAttendanceApprovedBy")
+  auditLogs                       AuditLog[]
 
   @@index([organizationId])
 }
 
 model StaffingCompany {
-  id             String   @id @default(cuid())
+  id             String                @id @default(cuid())
   legalName      String
   displayName    String
   status         StaffingCompanyStatus @default(PENDING)
   email          String?
   phone          String?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
   organizationId String
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  employees    Employee[]
+  organization          Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  employees             Employee[]
+  weeklyAttendanceLines WeeklyAttendanceLine[]
 }
 
 model AttendanceDevice {
@@ -439,6 +462,62 @@ model AttendanceAlert {
   @@index([organizationId])
   @@index([propertyId, status])
   @@index([employeeId])
+}
+
+model WeeklyAttendanceBatch {
+  id               String                      @id @default(cuid())
+  organizationId   String
+  propertyId       String
+  weekStartDate    DateTime                    @db.Date
+  weekEndDate      DateTime                    @db.Date
+  status           WeeklyAttendanceBatchStatus @default(DRAFT)
+  generatedAt      DateTime                    @default(now())
+  approvedByUserId String?
+  approvedAt       DateTime?
+  createdAt        DateTime                    @default(now())
+  updatedAt        DateTime                    @updatedAt
+
+  organization   Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  property       Property               @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  approvedByUser User?                  @relation("WeeklyAttendanceApprovedBy", fields: [approvedByUserId], references: [id], onDelete: SetNull)
+  lines          WeeklyAttendanceLine[]
+
+  @@unique([propertyId, weekStartDate])
+  @@index([organizationId])
+  @@index([propertyId, status])
+}
+
+model WeeklyAttendanceLine {
+  id                     String                             @id @default(cuid())
+  batchId                String
+  organizationId         String
+  propertyId             String
+  departmentId           String?
+  employeeId             String
+  staffingCompanyId      String?
+  regularHours           Decimal                            @db.Decimal(8, 2)
+  overtimeHours          Decimal                            @db.Decimal(8, 2)
+  totalHours             Decimal                            @db.Decimal(8, 2)
+  missingPunchCount      Int                                @default(0)
+  exceptionCount         Int                                @default(0)
+  correctionPendingCount Int                                @default(0)
+  approvalStatus         WeeklyAttendanceLineApprovalStatus @default(PENDING)
+  managerNote            String?
+  createdAt              DateTime                           @default(now())
+  updatedAt              DateTime                           @updatedAt
+
+  batch           WeeklyAttendanceBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  organization    Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  property        Property              @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  department      Department?           @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  employee        Employee              @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  staffingCompany StaffingCompany?      @relation(fields: [staffingCompanyId], references: [id], onDelete: SetNull)
+
+  @@unique([batchId, employeeId])
+  @@index([organizationId])
+  @@index([propertyId])
+  @@index([staffingCompanyId])
+  @@index([approvalStatus])
 }
 
 model AuditLog {
