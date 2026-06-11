@@ -283,16 +283,159 @@ export function WeeklyAttendance() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-semibold tracking-tight">Weekly Attendance</h1>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Generate, review, approve, and lock weekly attendance before payroll.
-        </p>
+        {isCorporateAdmin && (
+          <>
+            <h1 className="text-3xl font-semibold tracking-tight">Corporate Weekly Attendance Console</h1>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Manage all properties, review staffing company hours, and prepare payroll summaries.
+            </p>
+          </>
+        )}
+        {isPropertyManager && (
+          <>
+            <h1 className="text-3xl font-semibold tracking-tight">Property Manager Weekly Review</h1>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Generate, review, and approve weekly attendance for your property.
+            </p>
+          </>
+        )}
+        {isStaffingCompanyAdmin && (
+          <>
+            <h1 className="text-3xl font-semibold tracking-tight">Staffing Company Timesheet View</h1>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Review approved hours and prepare invoices for your staffing company employees.
+            </p>
+          </>
+        )}
+        {isFinanceUser && (
+          <>
+            <h1 className="text-3xl font-semibold tracking-tight">Finance Weekly Billing Review</h1>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Review and process payroll and staffing company invoices.
+            </p>
+          </>
+        )}
       </div>
 
       {(message || error) && (
         <p className={error ? "rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive" : "rounded-lg border bg-muted/40 p-4 text-sm"}>
           {error || message}
         </p>
+      )}
+
+      {selectedBatch && (
+        <div className="grid gap-4 md:grid-cols-4">
+          {isCorporateAdmin && (
+            <>
+              <SummaryCard
+                label="All Property Hours"
+                value={selectedBatch.lines.reduce((sum, line) => sum + Number(line.totalHours), 0).toFixed(2)}
+                unit="hrs"
+              />
+              <SummaryCard
+                label="Direct Employee Hours"
+                value={selectedBatch.lines
+                  .filter((line) => !line.staffingCompany)
+                  .reduce((sum, line) => sum + Number(line.totalHours), 0)
+                  .toFixed(2)}
+                unit="hrs"
+              />
+              <SummaryCard
+                label="Staffing Company Hours"
+                value={selectedBatch.lines
+                  .filter((line) => line.staffingCompany)
+                  .reduce((sum, line) => sum + Number(line.totalHours), 0)
+                  .toFixed(2)}
+                unit="hrs"
+              />
+              <SummaryCard
+                label="Employees Reviewed"
+                value={String(new Set(selectedBatch.lines.map((line) => line.employee.employeeNumber)).size)}
+                unit="total"
+              />
+            </>
+          )}
+          {isPropertyManager && (
+            <>
+              <SummaryCard
+                label="Property Hours"
+                value={selectedBatch.lines.reduce((sum, line) => sum + Number(line.totalHours), 0).toFixed(2)}
+                unit="hrs"
+              />
+              <SummaryCard
+                label="Pending Corrections"
+                value={String(selectedBatch.lines.filter((line) => line.correctionPendingCount > 0).length)}
+                unit="items"
+              />
+              <SummaryCard
+                label="Exceptions Found"
+                value={String(selectedBatch.lines.filter((line) => line.exceptionCount > 0).length)}
+                unit="items"
+              />
+              <SummaryCard
+                label="Employees Reviewed"
+                value={String(new Set(selectedBatch.lines.map((line) => line.employee.employeeNumber)).size)}
+                unit="total"
+              />
+            </>
+          )}
+          {isStaffingCompanyAdmin && (
+            <>
+              <SummaryCard
+                label="Staffing Employee Hours"
+                value={selectedBatch.lines.reduce((sum, line) => sum + Number(line.totalHours), 0).toFixed(2)}
+                unit="hrs"
+              />
+              <SummaryCard
+                label="Approved Billable Hours"
+                value={selectedBatch.status === "APPROVED" || selectedBatch.status === "LOCKED"
+                  ? selectedBatch.lines.reduce((sum, line) => sum + Number(line.totalHours), 0).toFixed(2)
+                  : "0.00"}
+                unit="hrs"
+              />
+              <SummaryCard
+                label="Properties Served"
+                value={String(1)}
+                unit="property"
+              />
+              <SummaryCard
+                label="Invoice Status"
+                value={selectedBatch.status === "APPROVED" || selectedBatch.status === "LOCKED" ? "Ready" : "Pending"}
+                unit="status"
+              />
+            </>
+          )}
+          {isFinanceUser && (
+            <>
+              <SummaryCard
+                label="Payroll-Ready Hours"
+                value={selectedBatch.lines
+                  .filter((line) => !line.staffingCompany)
+                  .reduce((sum, line) => sum + Number(line.totalHours), 0)
+                  .toFixed(2)}
+                unit="hrs"
+              />
+              <SummaryCard
+                label="Staffing Payable Hours"
+                value={selectedBatch.lines
+                  .filter((line) => line.staffingCompany)
+                  .reduce((sum, line) => sum + Number(line.totalHours), 0)
+                  .toFixed(2)}
+                unit="hrs"
+              />
+              <SummaryCard
+                label="Batch Status"
+                value={selectedBatch.status.replaceAll("_", " ")}
+                unit="state"
+              />
+              <SummaryCard
+                label="Locked"
+                value={selectedBatch.status === "LOCKED" ? "Yes" : "No"}
+                unit="indicator"
+              />
+            </>
+          )}
+        </div>
       )}
 
       {canGenerate && (
@@ -350,67 +493,78 @@ export function WeeklyAttendance() {
 
       {selectedBatch && (
         <Card>
-          <CardHeader className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-            <div>
-              <h2 className="font-semibold">{selectedBatch.property.name}: {formatDate(selectedBatch.weekStartDate)} - {formatDate(selectedBatch.weekEndDate)}</h2>
-              <div className="mt-2"><StatusBadge status={selectedBatch.status} /></div>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {showApprovalSection && (
-                <>
-                  {canApproveBatch && (
-                    <Button disabled={busy} onClick={approve}>Approve batch</Button>
-                  )}
-                  {canRequestCorrectionsBatch && (
-                    <Button disabled={busy} variant="outline" onClick={requestCorrections}>
-                      Request corrections
+          <CardHeader className="flex flex-col gap-4">
+            <div className="flex flex-col gap-2 xl:flex-row xl:items-center xl:justify-between">
+              <div>
+                <h2 className="font-semibold">{selectedBatch.property.name}: {formatDate(selectedBatch.weekStartDate)} - {formatDate(selectedBatch.weekEndDate)}</h2>
+                <div className="mt-2"><StatusBadge status={selectedBatch.status} /></div>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {isCorporateAdmin && (
+                  <>
+                    <Button disabled={busy} size="sm" onClick={() => exportReport("consolidated")}>
+                      Export consolidated
                     </Button>
-                  )}
-                  {canLockBatch && <Button disabled={busy} onClick={lock}>Lock approved batch</Button>}
-                </>
-              )}
-              {showExportButtons && (
-                <>
-                  {isCorporateAdmin && (
-                    <>
-                      <Button disabled={busy} size="sm" variant="outline" onClick={() => exportReport("consolidated")}>
-                        Export consolidated
-                      </Button>
-                      <Button disabled={busy} size="sm" variant="outline" onClick={() => exportReport("property")}>
-                        Export property
-                      </Button>
-                    </>
-                  )}
-                  {isStaffingCompanyAdmin && (
+                    <Button disabled={busy} size="sm" variant="outline" onClick={() => exportReport("property")}>
+                      Export property report
+                    </Button>
                     <Button disabled={busy} size="sm" variant="outline" onClick={() => exportReport("staffing-timesheet")}>
+                      Export staffing report
+                    </Button>
+                    <Button disabled={busy} size="sm" variant="outline">Send to finance</Button>
+                  </>
+                )}
+                {isPropertyManager && (
+                  <>
+                    {canApproveBatch && (
+                      <Button disabled={busy} onClick={approve}>Approve batch</Button>
+                    )}
+                    {canRequestCorrectionsBatch && (
+                      <Button disabled={busy} variant="outline" onClick={requestCorrections}>
+                        Request corrections
+                      </Button>
+                    )}
+                    {canLockBatch && <Button disabled={busy} onClick={lock}>Lock batch</Button>}
+                    <Button disabled={busy} size="sm" variant="outline" onClick={() => exportReport("property-detail")}>
+                      Export report
+                    </Button>
+                    <Button disabled={busy} size="sm" variant="outline">Send to corporate</Button>
+                  </>
+                )}
+                {isStaffingCompanyAdmin && (
+                  <>
+                    <Button disabled={busy} size="sm" onClick={() => exportReport("staffing-timesheet")}>
                       Export timesheet
                     </Button>
-                  )}
-                  {isFinanceUser && (
-                    <Button disabled={busy} size="sm" variant="outline" onClick={() => exportReport("finance-summary")}>
-                      Export finance summary
+                    <Button disabled={busy} size="sm" variant="outline">Raise invoice</Button>
+                  </>
+                )}
+                {isFinanceUser && (
+                  <>
+                    <Button disabled={busy} size="sm" onClick={() => exportReport("finance-summary")}>
+                      Export payroll summary
                     </Button>
-                  )}
-                  {isPropertyManager && (
-                    <Button disabled={busy} size="sm" variant="outline" onClick={() => exportReport("property-detail")}>
-                      Export property detail
+                    <Button disabled={busy} size="sm" variant="outline" onClick={() => exportReport("staffing-timesheet")}>
+                      Export staffing payable
                     </Button>
-                  )}
-                </>
-              )}
+                    <Button disabled={busy} size="sm" variant="outline">Mark review complete</Button>
+                    <Button disabled={busy} size="sm" variant="outline">Send to invoice module</Button>
+                  </>
+                )}
+              </div>
             </div>
-          </CardHeader>
-          <CardContent className="space-y-4 p-0">
             {selectedBatch.status === "CORRECTIONS_REQUIRED" && (
               <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
                 This batch requires corrections before it can be approved.
               </div>
             )}
             {selectedBatch.approvedAt && selectedBatch.approvedByUser && (
-              <div className="px-5 pt-5 text-sm text-muted-foreground">
+              <div className="text-sm text-muted-foreground">
                 Approved {formatDateTime(selectedBatch.approvedAt)} by {selectedBatch.approvedByUser.firstName} {selectedBatch.approvedByUser.lastName}
               </div>
             )}
+          </CardHeader>
+          <CardContent className="space-y-4 p-0">
             {staffingCompanies.length > 0 && (isCorporateAdmin || isPropertyManager) && (
               <div className="px-5 pt-5">
                 <SelectField
@@ -421,7 +575,7 @@ export function WeeklyAttendance() {
                 />
               </div>
             )}
-            {showApprovalSection && canApprove && selectedBatch.status !== "LOCKED" && (
+            {isPropertyManager && canApprove && selectedBatch.status !== "LOCKED" && (
               <div className="px-5 pt-5">
                 <Input value={managerNote} onChange={(event) => setManagerNote(event.target.value)} placeholder="Manager note or missing-punch override note" />
               </div>
@@ -450,6 +604,22 @@ export function WeeklyAttendance() {
         </Card>
       )}
     </div>
+  )
+}
+
+function SummaryCard({ label, value, unit }: { label: string; value: string; unit: string }) {
+  return (
+    <Card>
+      <CardContent className="pt-6">
+        <div className="space-y-2">
+          <p className="text-sm font-medium text-muted-foreground">{label}</p>
+          <div className="flex items-baseline gap-2">
+            <p className="text-2xl font-semibold">{value}</p>
+            <p className="text-xs text-muted-foreground">{unit}</p>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
   )
 }
 
