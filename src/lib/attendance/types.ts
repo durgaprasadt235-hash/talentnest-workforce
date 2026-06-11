@@ -7,6 +7,7 @@ export type {
   ApproveDeviceRequest,
   AttendanceCorrectionRequestInput,
   ClockRequest,
+  CorrectionActionRequest,
   DeviceRequest,
   ExceptionActionRequest,
   KioskEmployeeVerification,

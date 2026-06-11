@@ -1,4 +1,5 @@
 import {
+  AttendanceCorrectionStatus,
   AttendanceDeviceType,
   AttendanceExceptionStatus,
 } from "@prisma/client"
@@ -58,9 +59,25 @@ export const freezeReleaseRequestSchema = z.object({
   userId: z.string().trim().max(100).optional(),
 })
 
+export const correctionActionRequestSchema = z.object({
+  correctionId: trimmedString.max(100),
+  status: z.enum([
+    AttendanceCorrectionStatus.APPROVED,
+    AttendanceCorrectionStatus.REJECTED,
+  ]),
+  note: z.string().trim().max(2_000).optional(),
+}).refine(
+  (input) => input.status !== AttendanceCorrectionStatus.REJECTED || Boolean(input.note),
+  {
+    message: "Manager note is required to reject a correction request.",
+    path: ["note"],
+  },
+)
+
 export type ClockRequest = z.infer<typeof clockRequestSchema>
 export type ApproveDeviceRequest = z.infer<typeof approveDeviceRequestSchema>
 export type DeviceRequest = z.infer<typeof deviceRequestSchema>
 export type KioskEmployeeVerification = z.infer<typeof kioskEmployeeVerificationSchema>
 export type AttendanceCorrectionRequestInput = z.infer<typeof attendanceCorrectionRequestSchema>
+export type CorrectionActionRequest = z.infer<typeof correctionActionRequestSchema>
 export type ExceptionActionRequest = z.infer<typeof exceptionActionRequestSchema>

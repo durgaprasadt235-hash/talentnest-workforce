@@ -22,6 +22,7 @@ import type {
   ApproveDeviceRequest,
   AttendanceCorrectionRequestInput,
   ClockRequest,
+  CorrectionActionRequest,
   DeviceRequest,
   ExceptionActionRequest,
   KioskEmployeeVerification,
@@ -31,6 +32,8 @@ import { verifyPin } from "@/src/lib/security/pin"
 
 const LATE_GRACE_MINUTES = 5
 const HOUR_MS = 60 * 60 * 1000
+
+export class AttendanceCorrectionNotFoundError extends Error {}
 
 function generateSecureCode(bytes = 18) {
   return randomBytes(bytes).toString("base64url")
@@ -869,6 +872,69 @@ export async function resolveException(input: ExceptionActionRequest) {
   }
 
   return exception
+}
+
+export async function resolveAttendanceCorrection(input: CorrectionActionRequest) {
+  const correction = await prisma.attendanceCorrectionRequest.findUnique({
+    where: { id: input.correctionId },
+  })
+
+  if (!correction) {
+    throw new AttendanceCorrectionNotFoundError("Attendance correction request not found.")
+  }
+
+  if (correction.status !== AttendanceCorrectionStatus.PENDING) {
+    throw new Error("Attendance correction request has already been resolved.")
+  }
+
+  if (
+    input.status === AttendanceCorrectionStatus.APPROVED &&
+    correction.attendanceRecordId
+  ) {
+    const record = await prisma.attendanceRecord.findUnique({
+      where: { id: correction.attendanceRecordId },
+    })
+
+    if (record) {
+      const clockInAt = correction.requestedClockInAt ?? record.clockInAt
+      const clockOutAt = correction.requestedClockOutAt ?? record.clockOutAt
+
+      await prisma.attendanceRecord.update({
+        where: { id: record.id },
+        data: {
+          clockInAt,
+          clockOutAt,
+          status:
+            record.managerApprovalStatus === ManagerApprovalStatus.PENDING
+              ? AttendanceRecordStatus.PENDING_MANAGER_APPROVAL
+              : clockOutAt
+                ? AttendanceRecordStatus.CLOCKED_OUT
+                : clockInAt
+                  ? AttendanceRecordStatus.OPEN
+                  : record.status,
+        },
+      })
+    }
+  }
+
+  const resolved = await prisma.attendanceCorrectionRequest.update({
+    where: { id: correction.id },
+    data: { status: input.status },
+  })
+
+  await audit(
+    `ATTENDANCE_CORRECTION_${input.status}`,
+    "AttendanceCorrectionRequest",
+    resolved.id,
+    resolved.organizationId,
+    resolved.propertyId,
+    {
+      note: input.note,
+      attendanceRecordId: resolved.attendanceRecordId,
+    },
+  )
+
+  return resolved
 }
 
 export async function releaseFreeze(
