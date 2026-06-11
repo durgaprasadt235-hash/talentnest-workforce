@@ -42,8 +42,17 @@ const batchInclude = {
   },
 } satisfies Prisma.WeeklyAttendanceBatchInclude
 
-export async function listWeeklyAttendance(role: BusinessRole) {
-  const visibleStatuses =
+type WeeklyAttendanceFilters = {
+  organizationId?: string
+  propertyId?: string
+  status?: WeeklyAttendanceBatchStatus
+}
+
+export async function listWeeklyAttendance(
+  role: BusinessRole,
+  filters: WeeklyAttendanceFilters = {},
+) {
+  const visibleStatuses: WeeklyAttendanceBatchStatus[] | undefined =
     role === "FINANCE_USER"
       ? [
           WeeklyAttendanceBatchStatus.APPROVED,
@@ -51,9 +60,43 @@ export async function listWeeklyAttendance(role: BusinessRole) {
         ]
       : undefined
 
+  if (
+    filters.status &&
+    visibleStatuses &&
+    !visibleStatuses.includes(filters.status)
+  ) {
+    const [organizations, properties] = await Promise.all([
+      prisma.organization.findMany({
+        where: { status: RecordStatus.ACTIVE },
+        select: { id: true, name: true },
+        orderBy: { name: "asc" },
+      }),
+      prisma.property.findMany({
+        where: {
+          status: RecordStatus.ACTIVE,
+          organizationId: filters.organizationId ?? undefined,
+        },
+        select: { id: true, organizationId: true, name: true },
+        orderBy: { name: "asc" },
+      }),
+    ])
+
+    return { batches: [], options: { organizations, properties } }
+  }
+
+  const where: Prisma.WeeklyAttendanceBatchWhereInput = {}
+  if (filters.organizationId) where.organizationId = filters.organizationId
+  if (filters.propertyId) where.propertyId = filters.propertyId
+
+  if (filters.status) {
+    where.status = filters.status
+  } else if (visibleStatuses) {
+    where.status = { in: visibleStatuses }
+  }
+
   const [batches, organizations, properties] = await Promise.all([
     prisma.weeklyAttendanceBatch.findMany({
-      where: visibleStatuses ? { status: { in: visibleStatuses } } : undefined,
+      where,
       include: {
         organization: { select: { id: true, name: true } },
         property: { select: { id: true, name: true } },
@@ -67,7 +110,10 @@ export async function listWeeklyAttendance(role: BusinessRole) {
       orderBy: { name: "asc" },
     }),
     prisma.property.findMany({
-      where: { status: RecordStatus.ACTIVE },
+      where: {
+        status: RecordStatus.ACTIVE,
+        organizationId: filters.organizationId ?? undefined,
+      },
       select: { id: true, organizationId: true, name: true },
       orderBy: { name: "asc" },
     }),

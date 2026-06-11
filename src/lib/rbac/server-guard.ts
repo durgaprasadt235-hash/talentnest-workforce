@@ -1,6 +1,11 @@
 import { DEFAULT_CURRENT_USER, type CurrentUser } from "@/src/lib/rbac/current-user"
 import { hasPermission } from "@/src/lib/rbac/guards"
-import { MOCK_ROLE_HEADER } from "@/src/lib/rbac/mock-auth"
+import {
+  MOCK_ORGANIZATION_HEADER,
+  MOCK_PROPERTY_IDS_HEADER,
+  MOCK_ROLE_HEADER,
+  MOCK_STAFFING_COMPANY_HEADER,
+} from "@/src/lib/rbac/mock-auth"
 import type { Permission } from "@/src/lib/rbac/permissions"
 import { ROLES } from "@/src/lib/rbac/roles"
 
@@ -11,8 +16,25 @@ export class AuthorizationError extends Error {
 export function getServerCurrentUser(request: Request): CurrentUser {
   const requestedRole = request.headers.get(MOCK_ROLE_HEADER)
   const role = ROLES.find((candidate) => candidate === requestedRole)
+  const organizationId = request.headers.get(MOCK_ORGANIZATION_HEADER) ?? undefined
+  const propertyIdsRaw = request.headers.get(MOCK_PROPERTY_IDS_HEADER)
+  const staffingCompanyId = request.headers.get(MOCK_STAFFING_COMPANY_HEADER) ?? undefined
 
-  return { role: role ?? DEFAULT_CURRENT_USER.role }
+  let propertyIds: string[] | undefined
+  if (propertyIdsRaw) {
+    try {
+      propertyIds = JSON.parse(propertyIdsRaw)
+    } catch {
+      propertyIds = undefined
+    }
+  }
+
+  return {
+    role: role ?? DEFAULT_CURRENT_USER.role,
+    organizationId,
+    propertyIds,
+    staffingCompanyId,
+  }
 }
 
 export function requireServerPermission(

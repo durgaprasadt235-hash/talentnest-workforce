@@ -44,8 +44,18 @@ type AttendanceLine = {
 }
 type BatchDetail = Omit<BatchSummary, "_count"> & {
   approvedAt: string | null
+  approvedByUser: { id: string; firstName: string; lastName: string } | null
   lines: AttendanceLine[]
 }
+
+const batchStatusOptions: Option[] = [
+  { id: "", name: "All statuses" },
+  { id: "DRAFT", name: "Draft" },
+  { id: "PENDING_MANAGER_REVIEW", name: "Pending manager review" },
+  { id: "APPROVED", name: "Approved" },
+  { id: "CORRECTIONS_REQUIRED", name: "Corrections required" },
+  { id: "LOCKED", name: "Locked" },
+]
 
 export function WeeklyAttendance() {
   const { currentUser } = useCurrentUser()
@@ -54,32 +64,50 @@ export function WeeklyAttendance() {
   const [properties, setProperties] = useState<PropertyOption[]>([])
   const [organizationId, setOrganizationId] = useState("")
   const [propertyId, setPropertyId] = useState("")
+  const [filterOrganizationId, setFilterOrganizationId] = useState("")
+  const [filterPropertyId, setFilterPropertyId] = useState("")
+  const [filterStatus, setFilterStatus] = useState("")
   const [weekStartDate, setWeekStartDate] = useState(currentWeekStart())
   const [selectedBatch, setSelectedBatch] = useState<BatchDetail | null>(null)
+  const [selectedStaffingCompanyId, setSelectedStaffingCompanyId] = useState("")
   const [managerNote, setManagerNote] = useState("")
   const [message, setMessage] = useState("")
   const [error, setError] = useState("")
   const [busy, setBusy] = useState(false)
 
   const headers = useMemo(
-    () => mockRoleHeaders(currentUser.role),
-    [currentUser.role],
+    () =>
+      mockRoleHeaders(currentUser.role, {
+        organizationId: currentUser.organizationId,
+        propertyIds: currentUser.propertyIds,
+        staffingCompanyId: currentUser.staffingCompanyId,
+      }),
+    [currentUser],
   )
 
   const load = useCallback(async () => {
-    const response = await fetch("/api/weekly-attendance", { headers })
+    const query = new URLSearchParams()
+    if (filterOrganizationId) query.set("organizationId", filterOrganizationId)
+    if (filterPropertyId) query.set("propertyId", filterPropertyId)
+    if (filterStatus) query.set("status", filterStatus)
+
+    const response = await fetch(
+      `/api/weekly-attendance${query.toString() ? `?${query.toString()}` : ""}`,
+      { headers },
+    )
     const data = await response.json()
     if (!response.ok) throw new Error(data.error)
     setBatches(data.batches)
     setOrganizations(data.options.organizations)
     setProperties(data.options.properties)
-  }, [headers])
+  }, [headers, filterOrganizationId, filterPropertyId, filterStatus])
 
   const loadBatch = useCallback(
     async (id: string) => {
       const response = await fetch(`/api/weekly-attendance/${id}`, { headers })
       const data = await response.json()
       if (!response.ok) throw new Error(data.error)
+      setSelectedStaffingCompanyId("")
       setSelectedBatch(data.batch)
     },
     [headers],
@@ -91,8 +119,36 @@ export function WeeklyAttendance() {
     load().catch((caught: Error) => setError(caught.message))
   }, [load])
 
-  const availableProperties = properties.filter(
+  const availableGenerateProperties = properties.filter(
     (property) => property.organizationId === organizationId,
+  )
+  const availableFilterProperties = properties.filter(
+    (property) => property.organizationId === filterOrganizationId,
+  )
+  const staffingCompanies = useMemo(() => {
+    if (!selectedBatch) return []
+
+    return selectedBatch.lines
+      .filter((line): line is AttendanceLine & { staffingCompany: { id: string; displayName: string } } =>
+        line.staffingCompany !== null,
+      )
+      .reduce<{ id: string; name: string }[]>((unique, line) => {
+        if (!unique.some((company) => company.id === line.staffingCompany.id)) {
+          unique.push({ id: line.staffingCompany.id, name: line.staffingCompany.displayName })
+        }
+        return unique
+      }, [])
+  }, [selectedBatch])
+  const filteredLines = useMemo(
+    () =>
+      selectedBatch
+        ? selectedBatch.lines.filter(
+            (line) =>
+              !selectedStaffingCompanyId ||
+              line.staffingCompany?.id === selectedStaffingCompanyId,
+          )
+        : [],
+    [selectedBatch, selectedStaffingCompanyId],
   )
   const canGenerate = hasPermission(
     currentUser,
@@ -103,6 +159,55 @@ export function WeeklyAttendance() {
     Permission.APPROVE_WEEKLY_ATTENDANCE,
   )
   const canLock = hasPermission(currentUser, Permission.LOCK_WEEKLY_ATTENDANCE)
+
+  const selectedBatchStatus = selectedBatch?.status
+  const canApproveBatch = canApprove && selectedBatchStatus === "PENDING_MANAGER_REVIEW"
+  const canRequestCorrectionsBatch =
+    canApprove &&
+    (selectedBatchStatus === "DRAFT" || selectedBatchStatus === "PENDING_MANAGER_REVIEW")
+  const canLockBatch = canLock && selectedBatchStatus === "APPROVED"
+  const batchNeedsCorrections = selectedBatchStatus === "CORRECTIONS_REQUIRED"
+
+  // Role-based UI visibility
+  const isCorporateAdmin = ["CORPORATE_ADMIN", "ORGANIZATION_OWNER"].includes(
+    currentUser.role,
+  )
+  const isPropertyManager = currentUser.role === "PROPERTY_MANAGER"
+  const isStaffingCompanyAdmin = [
+    "STAFFING_COMPANY_ADMIN",
+    "STAFFING_COMPANY_COORDINATOR",
+  ].includes(currentUser.role)
+  const isFinanceUser = currentUser.role === "FINANCE_USER"
+
+  const showGenerateSection = canGenerate
+  const showFilterSection = isCorporateAdmin || isPropertyManager
+  const showApprovalSection =
+    !isFinanceUser && !isStaffingCompanyAdmin
+  const showExportButtons = selectedBatch && (isCorporateAdmin || isPropertyManager || isStaffingCompanyAdmin || isFinanceUser)
+
+  async function exportReport(reportType: string) {
+    if (!selectedBatch) return
+    setBusy(true)
+    setError("")
+    try {
+      const response = await fetch(
+        `/api/weekly-attendance/${selectedBatch.id}/export?type=${reportType}`,
+        { headers },
+      )
+      if (!response.ok) throw new Error("Export failed.")
+      const blob = await response.blob()
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = `weekly-attendance-${reportType}-${selectedBatch.id}.xlsx`
+      a.click()
+      window.URL.revokeObjectURL(url)
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Export failed.")
+    } finally {
+      setBusy(false)
+    }
+  }
 
   async function generate() {
     if (!organizationId || !propertyId || !weekStartDate) {
@@ -195,13 +300,27 @@ export function WeeklyAttendance() {
           <CardHeader><h2 className="font-semibold">Generate weekly attendance</h2></CardHeader>
           <CardContent className="grid gap-4 md:grid-cols-4">
             <SelectField label="Organization" value={organizationId} onChange={(value) => { setOrganizationId(value); setPropertyId("") }} options={organizations} />
-            <SelectField label="Property" value={propertyId} onChange={setPropertyId} options={availableProperties} />
+            <SelectField label="Property" value={propertyId} onChange={setPropertyId} options={availableGenerateProperties} />
             <label className="space-y-2 text-sm font-medium">
               <span>Week starting</span>
               <Input type="date" value={weekStartDate} onChange={(event) => setWeekStartDate(event.target.value)} />
             </label>
             <div className="flex items-end">
               <Button disabled={busy} className="w-full" onClick={generate}>Generate weekly attendance</Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {showFilterSection && (
+        <Card>
+          <CardHeader><h2 className="font-semibold">Filter batches</h2></CardHeader>
+          <CardContent className="grid gap-4 md:grid-cols-4">
+            <SelectField label="Organization" value={filterOrganizationId} onChange={(value) => { setFilterOrganizationId(value); setFilterPropertyId("") }} options={organizations} />
+            <SelectField label="Property" value={filterPropertyId} onChange={setFilterPropertyId} options={availableFilterProperties} />
+            {isCorporateAdmin && <SelectField label="Status" value={filterStatus} onChange={setFilterStatus} options={batchStatusOptions} />}
+            <div className="flex items-end">
+              <Button disabled={busy} className="w-full" onClick={() => load().catch((caught: Error) => setError(caught.message))}>Refresh</Button>
             </div>
           </CardContent>
         </Card>
@@ -225,7 +344,7 @@ export function WeeklyAttendance() {
               ))}
             </tbody>
           </Table>
-          {batches.length === 0 && <p className="p-6 text-center text-sm text-muted-foreground">No weekly attendance batches.</p>}
+          {batches.length === 0 && <p className="p-6 text-center text-sm text-muted-foreground">No weekly attendance batches found for your role.</p>}
         </CardContent>
       </Card>
 
@@ -237,17 +356,72 @@ export function WeeklyAttendance() {
               <div className="mt-2"><StatusBadge status={selectedBatch.status} /></div>
             </div>
             <div className="flex flex-wrap gap-2">
-              {canApprove && selectedBatch.status !== "APPROVED" && selectedBatch.status !== "LOCKED" && (
+              {showApprovalSection && (
                 <>
-                  <Button disabled={busy} onClick={approve}>Approve batch</Button>
-                  <Button disabled={busy} variant="outline" onClick={requestCorrections}>Request corrections</Button>
+                  {canApproveBatch && (
+                    <Button disabled={busy} onClick={approve}>Approve batch</Button>
+                  )}
+                  {canRequestCorrectionsBatch && (
+                    <Button disabled={busy} variant="outline" onClick={requestCorrections}>
+                      Request corrections
+                    </Button>
+                  )}
+                  {canLockBatch && <Button disabled={busy} onClick={lock}>Lock approved batch</Button>}
                 </>
               )}
-              {canLock && selectedBatch.status === "APPROVED" && <Button disabled={busy} onClick={lock}>Lock approved batch</Button>}
+              {showExportButtons && (
+                <>
+                  {isCorporateAdmin && (
+                    <>
+                      <Button disabled={busy} size="sm" variant="outline" onClick={() => exportReport("consolidated")}>
+                        Export consolidated
+                      </Button>
+                      <Button disabled={busy} size="sm" variant="outline" onClick={() => exportReport("property")}>
+                        Export property
+                      </Button>
+                    </>
+                  )}
+                  {isStaffingCompanyAdmin && (
+                    <Button disabled={busy} size="sm" variant="outline" onClick={() => exportReport("staffing-timesheet")}>
+                      Export timesheet
+                    </Button>
+                  )}
+                  {isFinanceUser && (
+                    <Button disabled={busy} size="sm" variant="outline" onClick={() => exportReport("finance-summary")}>
+                      Export finance summary
+                    </Button>
+                  )}
+                  {isPropertyManager && (
+                    <Button disabled={busy} size="sm" variant="outline" onClick={() => exportReport("property-detail")}>
+                      Export property detail
+                    </Button>
+                  )}
+                </>
+              )}
             </div>
           </CardHeader>
           <CardContent className="space-y-4 p-0">
-            {canApprove && selectedBatch.status !== "LOCKED" && (
+            {selectedBatch.status === "CORRECTIONS_REQUIRED" && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                This batch requires corrections before it can be approved.
+              </div>
+            )}
+            {selectedBatch.approvedAt && selectedBatch.approvedByUser && (
+              <div className="px-5 pt-5 text-sm text-muted-foreground">
+                Approved {formatDateTime(selectedBatch.approvedAt)} by {selectedBatch.approvedByUser.firstName} {selectedBatch.approvedByUser.lastName}
+              </div>
+            )}
+            {staffingCompanies.length > 0 && (isCorporateAdmin || isPropertyManager) && (
+              <div className="px-5 pt-5">
+                <SelectField
+                  label="Staffing company"
+                  value={selectedStaffingCompanyId}
+                  onChange={setSelectedStaffingCompanyId}
+                  options={[{ id: "", name: "All staffing companies" }, ...staffingCompanies]}
+                />
+              </div>
+            )}
+            {showApprovalSection && canApprove && selectedBatch.status !== "LOCKED" && (
               <div className="px-5 pt-5">
                 <Input value={managerNote} onChange={(event) => setManagerNote(event.target.value)} placeholder="Manager note or missing-punch override note" />
               </div>
@@ -255,7 +429,7 @@ export function WeeklyAttendance() {
             <Table>
               <thead><tr><TableHead>Employee</TableHead><TableHead>Department</TableHead><TableHead>Staffing company</TableHead><TableHead>Regular</TableHead><TableHead>Overtime</TableHead><TableHead>Total</TableHead><TableHead>Missing punches</TableHead><TableHead>Exceptions</TableHead><TableHead>Corrections</TableHead><TableHead>Approval</TableHead></tr></thead>
               <tbody>
-                {selectedBatch.lines.map((line) => (
+                {filteredLines.map((line) => (
                   <tr key={line.id}>
                     <TableCell><p className="font-medium">{line.employee.firstName} {line.employee.lastName}</p><p className="text-xs text-muted-foreground">{line.employee.employeeNumber}</p></TableCell>
                     <TableCell>{line.department?.name ?? "Not assigned"}</TableCell>
@@ -271,7 +445,7 @@ export function WeeklyAttendance() {
                 ))}
               </tbody>
             </Table>
-            {selectedBatch.lines.length === 0 && <p className="p-6 text-center text-sm text-muted-foreground">No attendance records were found for this property and week.</p>}
+            {filteredLines.length === 0 && <p className="p-6 text-center text-sm text-muted-foreground">No attendance records found.</p>}
           </CardContent>
         </Card>
       )}
@@ -307,6 +481,17 @@ function StatusBadge({ status }: { status: string }) {
 
 function formatDate(value: string) {
   return new Date(value).toLocaleDateString(undefined, { timeZone: "UTC" })
+}
+
+function formatDateTime(value: string) {
+  return new Date(value).toLocaleString(undefined, {
+    timeZone: "UTC",
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  })
 }
 
 function formatHours(value: string) {
