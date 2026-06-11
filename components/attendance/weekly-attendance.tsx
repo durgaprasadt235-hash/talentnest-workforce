@@ -44,8 +44,20 @@ type AttendanceLine = {
 }
 type BatchDetail = Omit<BatchSummary, "_count"> & {
   approvedAt: string | null
+  sentToCorporateAt: string | null
+  sentToFinanceAt: string | null
   approvedByUser: { id: string; firstName: string; lastName: string } | null
   lines: AttendanceLine[]
+  invoices: WeeklyInvoice[]
+}
+type WeeklyInvoice = {
+  id: string
+  type: "PAYROLL" | "STAFFING"
+  status: string
+  regularHours: string
+  overtimeHours: string
+  totalHours: string
+  staffingCompany: { id: string; displayName: string } | null
 }
 
 const batchStatusOptions: Option[] = [
@@ -64,6 +76,7 @@ export function WeeklyAttendance() {
   const [properties, setProperties] = useState<PropertyOption[]>([])
   const [organizationId, setOrganizationId] = useState("")
   const [propertyId, setPropertyId] = useState("")
+  const [batchPropertyIds, setBatchPropertyIds] = useState<string[]>([])
   const [filterOrganizationId, setFilterOrganizationId] = useState("")
   const [filterPropertyId, setFilterPropertyId] = useState("")
   const [filterStatus, setFilterStatus] = useState("")
@@ -145,6 +158,7 @@ export function WeeklyAttendance() {
         ? selectedBatch.lines.filter(
             (line) =>
               !selectedStaffingCompanyId ||
+              (selectedStaffingCompanyId === "DIRECT" && !line.staffingCompany) ||
               line.staffingCompany?.id === selectedStaffingCompanyId,
           )
         : [],
@@ -166,8 +180,6 @@ export function WeeklyAttendance() {
     canApprove &&
     (selectedBatchStatus === "DRAFT" || selectedBatchStatus === "PENDING_MANAGER_REVIEW")
   const canLockBatch = canLock && selectedBatchStatus === "APPROVED"
-  const batchNeedsCorrections = selectedBatchStatus === "CORRECTIONS_REQUIRED"
-
   // Role-based UI visibility
   const isCorporateAdmin = ["CORPORATE_ADMIN", "ORGANIZATION_OWNER"].includes(
     currentUser.role,
@@ -179,11 +191,7 @@ export function WeeklyAttendance() {
   ].includes(currentUser.role)
   const isFinanceUser = currentUser.role === "FINANCE_USER"
 
-  const showGenerateSection = canGenerate
   const showFilterSection = isCorporateAdmin || isPropertyManager
-  const showApprovalSection =
-    !isFinanceUser && !isStaffingCompanyAdmin
-  const showExportButtons = selectedBatch && (isCorporateAdmin || isPropertyManager || isStaffingCompanyAdmin || isFinanceUser)
 
   async function exportReport(reportType: string) {
     if (!selectedBatch) return
@@ -199,7 +207,7 @@ export function WeeklyAttendance() {
       const url = window.URL.createObjectURL(blob)
       const a = document.createElement("a")
       a.href = url
-      a.download = `weekly-attendance-${reportType}-${selectedBatch.id}.xlsx`
+      a.download = `weekly-attendance-${reportType}-${selectedBatch.id}.csv`
       a.click()
       window.URL.revokeObjectURL(url)
     } catch (caught) {
@@ -218,6 +226,17 @@ export function WeeklyAttendance() {
       propertyId,
       weekStartDate,
     }, "Weekly attendance batch is ready.")
+  }
+
+  async function generateSelectedProperties() {
+    if (!organizationId || !batchPropertyIds.length || !weekStartDate) {
+      return setError("Select an organization, at least one property, and a week.")
+    }
+    await runWorkflowAction(
+      "/api/weekly-attendance/generate-batch",
+      { organizationId, propertyIds: batchPropertyIds, weekStartDate },
+      "Weekly attendance batches generated for the selected properties.",
+    )
   }
 
   async function approve() {
@@ -250,6 +269,85 @@ export function WeeklyAttendance() {
     )
   }
 
+  async function sendToCorporate() {
+    if (!selectedBatch) return
+    await runWorkflowAction(
+      `/api/weekly-attendance/${selectedBatch.id}/send-corporate`,
+      undefined,
+      "Weekly attendance sent to corporate.",
+      selectedBatch.id,
+    )
+  }
+
+  async function sendToFinance() {
+    if (!selectedBatch) return
+    await runWorkflowAction(
+      `/api/weekly-attendance/${selectedBatch.id}/send-finance`,
+      undefined,
+      "Approved weekly attendance sent to finance.",
+      selectedBatch.id,
+    )
+  }
+
+  async function createInvoice(type: "PAYROLL" | "STAFFING") {
+    if (!selectedBatch) return
+    if (type === "STAFFING" && !isStaffingCompanyAdmin && !selectedStaffingCompanyId) {
+      return setError("Select a staffing company before creating a staffing invoice.")
+    }
+    await runWorkflowAction(
+      `/api/weekly-attendance/${selectedBatch.id}/invoices`,
+      {
+        type,
+        staffingCompanyId:
+          type === "STAFFING" && selectedStaffingCompanyId
+            ? selectedStaffingCompanyId
+            : undefined,
+      },
+      `${type === "PAYROLL" ? "Payroll payable" : "Staffing invoice"} created.`,
+      selectedBatch.id,
+    )
+  }
+
+  async function markInvoicePaid(invoiceId: string) {
+    if (!selectedBatch) return
+    await runWorkflowAction(
+      `/api/weekly-attendance/invoices/${invoiceId}/mark-paid`,
+      undefined,
+      "Invoice marked paid.",
+      selectedBatch.id,
+    )
+  }
+
+  async function runWorkflowAction(
+    path: string,
+    body: Record<string, unknown> | undefined,
+    successMessage: string,
+    batchId?: string,
+  ) {
+    setBusy(true)
+    setError("")
+    setMessage("")
+    try {
+      const response = await fetch(path, {
+        method: "POST",
+        headers: {
+          ...(body ? { "content-type": "application/json" } : {}),
+          ...headers,
+        },
+        body: body ? JSON.stringify(body) : undefined,
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error)
+      setMessage(successMessage)
+      await load()
+      if (batchId) await loadBatch(batchId)
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Action failed.")
+    } finally {
+      setBusy(false)
+    }
+  }
+
   async function runAction(
     path: string,
     body: Record<string, unknown> | undefined,
@@ -269,10 +367,10 @@ export function WeeklyAttendance() {
       })
       const data = await response.json()
       if (!response.ok) throw new Error(data.error)
-      setSelectedBatch(data.batch)
       setManagerNote("")
       setMessage(successMessage)
       await load()
+      if (data.batch?.id) await loadBatch(data.batch.id)
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Action failed.")
     } finally {
@@ -455,6 +553,33 @@ export function WeeklyAttendance() {
         </Card>
       )}
 
+      {isCorporateAdmin && (
+        <Card>
+          <CardHeader><h2 className="font-semibold">Batch selected properties</h2></CardHeader>
+          <CardContent className="grid gap-4 md:grid-cols-4">
+            <SelectField label="Organization" value={organizationId} onChange={(value) => { setOrganizationId(value); setBatchPropertyIds([]) }} options={organizations} />
+            <label className="space-y-2 text-sm font-medium">
+              <span>Properties</span>
+              <select
+                multiple
+                value={batchPropertyIds}
+                onChange={(event) => setBatchPropertyIds(Array.from(event.target.selectedOptions, (option) => option.value))}
+                className="min-h-24 w-full rounded-lg border bg-background px-2.5 py-2 text-sm"
+              >
+                {availableGenerateProperties.map((property) => <option key={property.id} value={property.id}>{property.name}</option>)}
+              </select>
+            </label>
+            <label className="space-y-2 text-sm font-medium">
+              <span>Week starting</span>
+              <Input type="date" value={weekStartDate} onChange={(event) => setWeekStartDate(event.target.value)} />
+            </label>
+            <div className="flex items-end">
+              <Button disabled={busy} className="w-full" onClick={generateSelectedProperties}>Generate selected properties</Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {showFilterSection && (
         <Card>
           <CardHeader><h2 className="font-semibold">Filter batches</h2></CardHeader>
@@ -511,7 +636,7 @@ export function WeeklyAttendance() {
                     <Button disabled={busy} size="sm" variant="outline" onClick={() => exportReport("staffing-timesheet")}>
                       Export staffing report
                     </Button>
-                    <Button disabled={busy} size="sm" variant="outline">Send to finance</Button>
+                    <Button disabled={busy || !selectedBatch.sentToCorporateAt} size="sm" variant="outline" onClick={sendToFinance}>Send approved batches to finance</Button>
                   </>
                 )}
                 {isPropertyManager && (
@@ -528,7 +653,7 @@ export function WeeklyAttendance() {
                     <Button disabled={busy} size="sm" variant="outline" onClick={() => exportReport("property-detail")}>
                       Export report
                     </Button>
-                    <Button disabled={busy} size="sm" variant="outline">Send to corporate</Button>
+                    <Button disabled={busy || !["APPROVED", "LOCKED"].includes(selectedBatch.status)} size="sm" variant="outline" onClick={sendToCorporate}>Send to corporate</Button>
                   </>
                 )}
                 {isStaffingCompanyAdmin && (
@@ -536,7 +661,7 @@ export function WeeklyAttendance() {
                     <Button disabled={busy} size="sm" onClick={() => exportReport("staffing-timesheet")}>
                       Export timesheet
                     </Button>
-                    <Button disabled={busy} size="sm" variant="outline">Raise invoice</Button>
+                    <Button disabled={busy} size="sm" variant="outline" onClick={() => createInvoice("STAFFING")}>Generate staffing invoice</Button>
                   </>
                 )}
                 {isFinanceUser && (
@@ -547,8 +672,8 @@ export function WeeklyAttendance() {
                     <Button disabled={busy} size="sm" variant="outline" onClick={() => exportReport("staffing-timesheet")}>
                       Export staffing payable
                     </Button>
-                    <Button disabled={busy} size="sm" variant="outline">Mark review complete</Button>
-                    <Button disabled={busy} size="sm" variant="outline">Send to invoice module</Button>
+                    <Button disabled={busy} size="sm" variant="outline" onClick={() => createInvoice("PAYROLL")}>Create payroll payable</Button>
+                    <Button disabled={busy || !staffingCompanies.length} size="sm" variant="outline" onClick={() => createInvoice("STAFFING")}>Create staffing invoice</Button>
                   </>
                 )}
               </div>
@@ -563,15 +688,19 @@ export function WeeklyAttendance() {
                 Approved {formatDateTime(selectedBatch.approvedAt)} by {selectedBatch.approvedByUser.firstName} {selectedBatch.approvedByUser.lastName}
               </div>
             )}
+            <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
+              <span>Corporate: {selectedBatch.sentToCorporateAt ? formatDateTime(selectedBatch.sentToCorporateAt) : "Not sent"}</span>
+              <span>Finance: {selectedBatch.sentToFinanceAt ? formatDateTime(selectedBatch.sentToFinanceAt) : "Not sent"}</span>
+            </div>
           </CardHeader>
           <CardContent className="space-y-4 p-0">
-            {staffingCompanies.length > 0 && (isCorporateAdmin || isPropertyManager) && (
+            {staffingCompanies.length > 0 && (isCorporateAdmin || isPropertyManager || isFinanceUser) && (
               <div className="px-5 pt-5">
                 <SelectField
                   label="Staffing company"
                   value={selectedStaffingCompanyId}
                   onChange={setSelectedStaffingCompanyId}
-                  options={[{ id: "", name: "All staffing companies" }, ...staffingCompanies]}
+                  options={[{ id: "", name: "All employees" }, { id: "DIRECT", name: "Direct employees" }, ...staffingCompanies]}
                 />
               </div>
             )}
@@ -600,6 +729,27 @@ export function WeeklyAttendance() {
               </tbody>
             </Table>
             {filteredLines.length === 0 && <p className="p-6 text-center text-sm text-muted-foreground">No attendance records found.</p>}
+            {selectedBatch.invoices.length > 0 && (
+              <div className="border-t p-5">
+                <h3 className="mb-3 font-semibold">Invoices and payables</h3>
+                <Table>
+                  <thead><tr><TableHead>Type</TableHead><TableHead>Staffing company</TableHead><TableHead>Regular</TableHead><TableHead>Overtime</TableHead><TableHead>Total</TableHead><TableHead>Status</TableHead>{isFinanceUser && <TableHead>Action</TableHead>}</tr></thead>
+                  <tbody>
+                    {selectedBatch.invoices.map((invoice) => (
+                      <tr key={invoice.id}>
+                        <TableCell>{invoice.type}</TableCell>
+                        <TableCell>{invoice.staffingCompany?.displayName ?? "Direct payroll"}</TableCell>
+                        <TableCell>{formatHours(invoice.regularHours)}</TableCell>
+                        <TableCell>{formatHours(invoice.overtimeHours)}</TableCell>
+                        <TableCell>{formatHours(invoice.totalHours)}</TableCell>
+                        <TableCell><StatusBadge status={invoice.status} /></TableCell>
+                        {isFinanceUser && <TableCell>{invoice.status !== "PAID" ? <Button size="sm" onClick={() => markInvoicePaid(invoice.id)}>Mark paid</Button> : "--"}</TableCell>}
+                      </tr>
+                    ))}
+                  </tbody>
+                </Table>
+              </div>
+            )}
           </CardContent>
         </Card>
       )}

@@ -1,7 +1,6 @@
-import { EmploymentType, Prisma, RecordStatus, WeeklyAttendanceBatchStatus } from "@prisma/client"
+import { Prisma, RecordStatus, WeeklyAttendanceBatchStatus } from "@prisma/client"
 
 import type { CurrentUser } from "@/src/lib/rbac/current-user"
-import type { Role as BusinessRole } from "@/src/lib/rbac/roles"
 import { prisma } from "@/src/lib/prisma"
 
 /**
@@ -14,7 +13,16 @@ import { prisma } from "@/src/lib/prisma"
  * - Employee: own weekly summary only
  */
 
-export async function listWeeklyAttendanceByRole(user: CurrentUser) {
+type WeeklyAttendanceFilters = {
+  organizationId?: string
+  propertyId?: string
+  status?: WeeklyAttendanceBatchStatus
+}
+
+export async function listWeeklyAttendanceByRole(
+  user: CurrentUser,
+  filters: WeeklyAttendanceFilters = {},
+) {
   const role = user.role
 
   if (
@@ -24,34 +32,32 @@ export async function listWeeklyAttendanceByRole(user: CurrentUser) {
     if (!user.staffingCompanyId) {
       return { batches: [], options: { organizations: [], properties: [] } }
     }
-    return listStaffingCompanyBatches(user.staffingCompanyId)
+    return listStaffingCompanyBatches(user.staffingCompanyId, filters)
   }
 
   if (role === "FINANCE_USER") {
-    return listFinanceBatches()
+    return listFinanceBatches(filters)
   }
 
   if (role === "PROPERTY_MANAGER") {
-    if (!user.propertyIds?.length) {
-      return { batches: [], options: { organizations: [], properties: [] } }
-    }
-    return listPropertyManagerBatches(user.propertyIds)
+    return listPropertyManagerBatches(user.propertyIds, filters)
   }
 
   if (role === "CORPORATE_ADMIN" || role === "ORGANIZATION_OWNER") {
-    if (!user.organizationId) {
-      return { batches: [], options: { organizations: [], properties: [] } }
-    }
-    return listCorporateBatches(user.organizationId)
+    return listCorporateBatches(user.organizationId, filters)
   }
 
   return { batches: [], options: { organizations: [], properties: [] } }
 }
 
-async function listCorporateBatches(organizationId: string) {
+async function listCorporateBatches(organizationId: string | undefined, filters: WeeklyAttendanceFilters) {
   const [batches, organizations, properties] = await Promise.all([
     prisma.weeklyAttendanceBatch.findMany({
-      where: { organizationId },
+      where: {
+        organizationId: filters.organizationId ?? organizationId,
+        propertyId: filters.propertyId,
+        status: filters.status,
+      },
       include: {
         organization: { select: { id: true, name: true } },
         property: { select: { id: true, name: true } },
@@ -66,7 +72,7 @@ async function listCorporateBatches(organizationId: string) {
     }),
     prisma.property.findMany({
       where: {
-        organizationId,
+        organizationId: filters.organizationId ?? organizationId,
         status: RecordStatus.ACTIVE,
       },
       select: { id: true, organizationId: true, name: true },
@@ -77,10 +83,18 @@ async function listCorporateBatches(organizationId: string) {
   return { batches, options: { organizations, properties } }
 }
 
-async function listPropertyManagerBatches(propertyIds: string[]) {
+async function listPropertyManagerBatches(propertyIds: string[] | undefined, filters: WeeklyAttendanceFilters) {
   const [batches, properties] = await Promise.all([
     prisma.weeklyAttendanceBatch.findMany({
-      where: { propertyId: { in: propertyIds } },
+      where: {
+        propertyId: filters.propertyId
+          ? filters.propertyId
+          : propertyIds?.length
+            ? { in: propertyIds }
+            : undefined,
+        organizationId: filters.organizationId,
+        status: filters.status,
+      },
       include: {
         organization: { select: { id: true, name: true } },
         property: { select: { id: true, name: true } },
@@ -89,7 +103,11 @@ async function listPropertyManagerBatches(propertyIds: string[]) {
       orderBy: [{ weekStartDate: "desc" }, { generatedAt: "desc" }],
     }),
     prisma.property.findMany({
-      where: { id: { in: propertyIds }, status: RecordStatus.ACTIVE },
+      where: {
+        id: propertyIds?.length ? { in: propertyIds } : undefined,
+        organizationId: filters.organizationId,
+        status: RecordStatus.ACTIVE,
+      },
       select: { id: true, organizationId: true, name: true },
       orderBy: { name: "asc" },
     }),
@@ -106,11 +124,13 @@ async function listPropertyManagerBatches(propertyIds: string[]) {
   return { batches, options: { organizations, properties } }
 }
 
-async function listStaffingCompanyBatches(staffingCompanyId: string) {
+async function listStaffingCompanyBatches(staffingCompanyId: string, filters: WeeklyAttendanceFilters) {
   // Staffing company admins can only see approved/locked batches
   const batches = await prisma.weeklyAttendanceBatch.findMany({
     where: {
       status: { in: ["APPROVED", "LOCKED"] },
+      organizationId: filters.organizationId,
+      propertyId: filters.propertyId,
       lines: {
         some: {
           employee: {
@@ -147,10 +167,16 @@ async function listStaffingCompanyBatches(staffingCompanyId: string) {
   return { batches, options: { organizations, properties } }
 }
 
-async function listFinanceBatches() {
+async function listFinanceBatches(filters: WeeklyAttendanceFilters) {
   // Finance users can only see approved/locked batches
   const batches = await prisma.weeklyAttendanceBatch.findMany({
-    where: { status: { in: ["APPROVED", "LOCKED"] } },
+    where: {
+      status: { in: ["APPROVED", "LOCKED"] },
+      sentToFinanceAt: { not: null },
+      organizationId: filters.organizationId,
+      propertyId: filters.propertyId,
+      ...(filters.status ? { status: filters.status } : {}),
+    },
     include: {
       organization: { select: { id: true, name: true } },
       property: { select: { id: true, name: true } },
@@ -190,6 +216,10 @@ export async function getWeeklyAttendanceBatchByRole(
     organization: { select: { id: true, name: true } },
     property: { select: { id: true, name: true } },
     approvedByUser: { select: { id: true, firstName: true, lastName: true } },
+    invoices: {
+      include: { staffingCompany: { select: { id: true, displayName: true } } },
+      orderBy: { createdAt: "desc" },
+    },
     lines: {
       include: {
         employee: {
@@ -224,10 +254,16 @@ export async function getWeeklyAttendanceBatchByRole(
     batch.lines = batch.lines.filter(
       (line) => line.staffingCompany?.id === user.staffingCompanyId,
     )
+    batch.invoices = batch.invoices.filter(
+      (invoice) => invoice.staffingCompany?.id === user.staffingCompanyId,
+    )
   }
 
   if (user.role === "FINANCE_USER") {
-    if (batch.status !== WeeklyAttendanceBatchStatus.APPROVED && batch.status !== WeeklyAttendanceBatchStatus.LOCKED) {
+    if (
+      !batch.sentToFinanceAt ||
+      (batch.status !== WeeklyAttendanceBatchStatus.APPROVED && batch.status !== WeeklyAttendanceBatchStatus.LOCKED)
+    ) {
       throw new Error("Unauthorized.")
     }
   }

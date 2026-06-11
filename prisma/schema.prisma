@@ -138,6 +138,17 @@ enum AttendanceCorrectionStatus {
   REJECTED
 }
 
+enum WeeklyAttendanceInvoiceType {
+  PAYROLL
+  STAFFING
+}
+
+enum WeeklyAttendanceInvoiceStatus {
+  DRAFT
+  ISSUED
+  PAID
+}
+
 model Organization {
   id        String       @id @default(cuid())
   name      String
@@ -161,6 +172,7 @@ model Organization {
   staffingCompanies            StaffingCompany[]
   weeklyAttendanceBatches      WeeklyAttendanceBatch[]
   weeklyAttendanceLines        WeeklyAttendanceLine[]
+  weeklyAttendanceInvoices     WeeklyAttendanceInvoice[]
   attendanceCorrectionRequests AttendanceCorrectionRequest[]
 }
 
@@ -191,6 +203,7 @@ model Property {
   auditLogs                    AuditLog[]
   weeklyAttendanceBatches      WeeklyAttendanceBatch[]
   weeklyAttendanceLines        WeeklyAttendanceLine[]
+  weeklyAttendanceInvoices     WeeklyAttendanceInvoice[]
   attendanceCorrectionRequests AttendanceCorrectionRequest[]
 
   @@index([organizationId])
@@ -285,9 +298,10 @@ model StaffingCompany {
   updatedAt      DateTime              @updatedAt
   organizationId String
 
-  organization          Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  employees             Employee[]
-  weeklyAttendanceLines WeeklyAttendanceLine[]
+  organization             Organization              @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  employees                Employee[]
+  weeklyAttendanceLines    WeeklyAttendanceLine[]
+  weeklyAttendanceInvoices WeeklyAttendanceInvoice[]
 }
 
 model AttendanceDevice {
@@ -499,26 +513,56 @@ model AttendanceCorrectionRequest {
 }
 
 model WeeklyAttendanceBatch {
-  id               String                      @id @default(cuid())
-  organizationId   String
-  propertyId       String
-  weekStartDate    DateTime                    @db.Date
-  weekEndDate      DateTime                    @db.Date
-  status           WeeklyAttendanceBatchStatus @default(DRAFT)
-  generatedAt      DateTime                    @default(now())
-  approvedByUserId String?
-  approvedAt       DateTime?
-  createdAt        DateTime                    @default(now())
-  updatedAt        DateTime                    @updatedAt
+  id                String                      @id @default(cuid())
+  organizationId    String
+  propertyId        String
+  weekStartDate     DateTime                    @db.Date
+  weekEndDate       DateTime                    @db.Date
+  status            WeeklyAttendanceBatchStatus @default(DRAFT)
+  generatedAt       DateTime                    @default(now())
+  approvedByUserId  String?
+  approvedAt        DateTime?
+  sentToCorporateAt DateTime?
+  sentToFinanceAt   DateTime?
+  createdAt         DateTime                    @default(now())
+  updatedAt         DateTime                    @updatedAt
 
-  organization   Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  property       Property               @relation(fields: [propertyId], references: [id], onDelete: Cascade)
-  approvedByUser User?                  @relation("WeeklyAttendanceApprovedBy", fields: [approvedByUserId], references: [id], onDelete: SetNull)
+  organization   Organization              @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  property       Property                  @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  approvedByUser User?                     @relation("WeeklyAttendanceApprovedBy", fields: [approvedByUserId], references: [id], onDelete: SetNull)
   lines          WeeklyAttendanceLine[]
+  invoices       WeeklyAttendanceInvoice[]
 
   @@unique([propertyId, weekStartDate])
   @@index([organizationId])
   @@index([propertyId, status])
+}
+
+model WeeklyAttendanceInvoice {
+  id                String                        @id @default(cuid())
+  batchId           String
+  organizationId    String
+  propertyId        String
+  staffingCompanyId String?
+  type              WeeklyAttendanceInvoiceType
+  status            WeeklyAttendanceInvoiceStatus @default(DRAFT)
+  regularHours      Decimal                       @db.Decimal(8, 2)
+  overtimeHours     Decimal                       @db.Decimal(8, 2)
+  totalHours        Decimal                       @db.Decimal(8, 2)
+  issuedAt          DateTime?
+  paidAt            DateTime?
+  createdAt         DateTime                      @default(now())
+  updatedAt         DateTime                      @updatedAt
+
+  batch           WeeklyAttendanceBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  organization    Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  property        Property              @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  staffingCompany StaffingCompany?      @relation(fields: [staffingCompanyId], references: [id], onDelete: SetNull)
+
+  @@index([batchId])
+  @@index([organizationId, status])
+  @@index([propertyId])
+  @@index([staffingCompanyId, status])
 }
 
 model WeeklyAttendanceLine {
