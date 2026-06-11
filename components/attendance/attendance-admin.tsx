@@ -87,6 +87,9 @@ export function AttendanceAdmin() {
   const [error, setError] = useState("")
   const [selectedRecord, setSelectedRecord] = useState<AttendanceRecord | null>(null)
   const [selectedCorrection, setSelectedCorrection] = useState<Correction | null>(null)
+  const [showRejectionSheet, setShowRejectionSheet] = useState(false)
+  const [rejectionReason, setRejectionReason] = useState<string>("Requested time is incorrect")
+  const [rejectionOtherNote, setRejectionOtherNote] = useState<string>("")
   const [previewPhoto, setPreviewPhoto] = useState<{ src: string; label: string } | null>(null)
 
   const load = useCallback(async () => {
@@ -133,9 +136,15 @@ export function AttendanceAdmin() {
   async function resolveCorrection(correctionId: string, status: "APPROVED" | "REJECTED") {
     setError("")
 
-    if (status === "REJECTED" && !note.trim()) {
-      setError("Manager note is required to reject a correction request.")
-      return
+    const payload: any = { correctionId, status }
+    // note is optional for approve, required for reject (enforced by server validation)
+    if (status === "REJECTED") {
+      // use rejection state if present, otherwise fall back to global note
+      payload.note = rejectionReason === "Other" ? rejectionOtherNote || note : rejectionReason || note
+      if (!payload.note || !String(payload.note).trim()) {
+        setError("Rejection note is required.")
+        return
+      }
     }
 
     const response = await fetch("/api/attendance/admin/corrections", {
@@ -144,7 +153,7 @@ export function AttendanceAdmin() {
         "content-type": "application/json",
         ...mockRoleHeaders(currentUser.role),
       },
-      body: JSON.stringify({ correctionId, status, note }),
+      body: JSON.stringify(payload),
     })
 
     const result = await response.json()
@@ -152,7 +161,16 @@ export function AttendanceAdmin() {
 
     setMessage(`Correction request ${status.toLowerCase()}.`)
     setSelectedCorrection(null)
+    setShowRejectionSheet(false)
+    setRejectionOtherNote("")
     await load()
+  }
+
+  function openRejection(correction: Correction) {
+    setSelectedCorrection(correction)
+    setRejectionReason("Requested time is incorrect")
+    setRejectionOtherNote("")
+    setShowRejectionSheet(true)
   }
 
   async function release(freezeId: string) {
@@ -190,7 +208,7 @@ export function AttendanceAdmin() {
         </div>
       </div>
 
-      <Input value={note} onChange={(event) => setNote(event.target.value)} placeholder="Manager note for next action" />
+      <Input value={note} onChange={(event) => setNote(event.target.value)} placeholder="Manager note for exception/freeze actions" />
       {(message || error) && <p className={error ? "text-sm text-destructive" : "text-sm text-foreground"}>{error || message}</p>}
 
       <AdminTable title="Pending exceptions" empty="No pending exceptions." headers={["Employee", "Property", "Exception", "Reason", "Actions"]}>
@@ -289,7 +307,7 @@ export function AttendanceAdmin() {
               <div className="flex flex-wrap gap-2">
                 <Button size="sm" variant="outline" onClick={() => setSelectedCorrection(item)}>View</Button>
                 <Button size="sm" onClick={() => resolveCorrection(item.id, "APPROVED")}>Approve</Button>
-                <Button size="sm" variant="outline" onClick={() => resolveCorrection(item.id, "REJECTED")}>Reject</Button>
+                <Button size="sm" variant="outline" onClick={() => openRejection(item)}>Reject</Button>
               </div>
             </TableCell>
           </tr>
@@ -316,9 +334,56 @@ export function AttendanceAdmin() {
         correction={selectedCorrection}
         onOpenChange={(open) => !open && setSelectedCorrection(null)}
         onApprove={() => selectedCorrection && resolveCorrection(selectedCorrection.id, "APPROVED")}
-        onReject={() => selectedCorrection && resolveCorrection(selectedCorrection.id, "REJECTED")}
+        onReject={() => selectedCorrection && selectedCorrection && openRejection(selectedCorrection)}
       />
       <PhotoPreview photo={previewPhoto} onOpenChange={(open) => !open && setPreviewPhoto(null)} />
+      <Sheet open={showRejectionSheet} onOpenChange={(open) => !open && setShowRejectionSheet(false)}>
+        <SheetContent className="overflow-y-auto sm:max-w-md">
+          <SheetHeader>
+            <SheetTitle>Reject correction request</SheetTitle>
+            <SheetDescription>Please provide a rejection reason for this correction request.</SheetDescription>
+          </SheetHeader>
+
+          {selectedCorrection && (
+            <div className="space-y-6 px-4 pb-6">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <DetailField label="Employee" value={employeeName(selectedCorrection.employee)} />
+                <DetailField label="Correction type" value={formatEnum(selectedCorrection.correctionType)} />
+              </div>
+
+              <div className="space-y-1">
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Employee reason</p>
+                <p className="rounded-md border bg-muted/20 p-3 text-sm">{selectedCorrection.reason}</p>
+              </div>
+
+              <label className="space-y-2 text-sm">
+                <span className="text-sm font-medium">Rejection reason</span>
+                <select value={rejectionReason} onChange={(e) => setRejectionReason(e.target.value)} className="h-9 w-full rounded-lg border bg-background px-2.5 text-sm">
+                  <option>Requested time is incorrect</option>
+                  <option>Insufficient explanation provided</option>
+                  <option>Attendance record already corrected</option>
+                  <option>Duplicate correction request</option>
+                  <option>Correction conflicts with approved records</option>
+                  <option>Employee must contact manager</option>
+                  <option>Other</option>
+                </select>
+              </label>
+
+              {rejectionReason === "Other" && (
+                <div>
+                  <p className="text-sm font-medium">Additional manager note</p>
+                  <Input value={rejectionOtherNote} onChange={(e) => setRejectionOtherNote(e.target.value)} placeholder="Explain rejection (required)" />
+                </div>
+              )}
+
+              <div className="flex gap-2">
+                <Button onClick={() => selectedCorrection && resolveCorrection(selectedCorrection.id, "REJECTED")}>Submit rejection</Button>
+                <Button variant="outline" onClick={() => setShowRejectionSheet(false)}>Cancel</Button>
+              </div>
+            </div>
+          )}
+        </SheetContent>
+      </Sheet>
     </div>
   )
 }
