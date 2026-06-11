@@ -2,6 +2,7 @@ import {
   WeeklyAttendanceBatchStatus,
   WeeklyAttendanceInvoiceStatus,
   WeeklyAttendanceInvoiceType,
+  WeeklyAttendanceLineApprovalStatus,
 } from "@prisma/client"
 
 import { createAuditLog } from "@/src/lib/audit"
@@ -9,7 +10,6 @@ import { prisma } from "@/src/lib/prisma"
 import type { CurrentUser } from "@/src/lib/rbac/current-user"
 import { AuthorizationError } from "@/src/lib/rbac/server-guard"
 import { Role } from "@/src/lib/rbac/roles"
-import type { CreateWeeklyAttendanceInvoiceInput } from "@/src/lib/weekly-attendance/validation"
 
 const corporateReadyStatuses: WeeklyAttendanceBatchStatus[] = [
   WeeklyAttendanceBatchStatus.APPROVED,
@@ -51,7 +51,10 @@ export async function sendWeeklyAttendanceToCorporate(id: string, user: CurrentU
   const updated = await prisma.weeklyAttendanceBatch.update({
     where: { id },
     data: {
-      status: WeeklyAttendanceBatchStatus.SENT_TO_CORPORATE,
+      status:
+        batch.status === WeeklyAttendanceBatchStatus.LOCKED
+          ? WeeklyAttendanceBatchStatus.LOCKED
+          : WeeklyAttendanceBatchStatus.SENT_TO_CORPORATE,
       sentToCorporateAt: new Date(),
     },
   })
@@ -61,9 +64,12 @@ export async function sendWeeklyAttendanceToCorporate(id: string, user: CurrentU
 
 export async function sendWeeklyAttendanceToFinance(id: string, user: CurrentUser) {
   const batch = await getBatch(id)
-  assertCorporate(user, batch.organizationId)
-  if (batch.status !== WeeklyAttendanceBatchStatus.SENT_TO_CORPORATE) {
-    throw new Error("Only batches submitted to corporate can be sent to finance.")
+  if (user.role !== Role.CORPORATE_ADMIN) {
+    throw new AuthorizationError("Only corporate admins can send batches to finance.")
+  }
+  if (user.organizationId && user.organizationId !== batch.organizationId) throw new Error("Unauthorized.")
+  if (batch.status !== WeeklyAttendanceBatchStatus.LOCKED) {
+    throw new Error("Only locked batches can be sent to finance.")
   }
 
   const updated = await prisma.weeklyAttendanceBatch.update({
@@ -120,81 +126,85 @@ export async function returnWeeklyAttendanceToManager(id: string, user: CurrentU
 export async function createWeeklyAttendanceInvoice(
   id: string,
   user: CurrentUser,
-  input: CreateWeeklyAttendanceInvoiceInput,
 ) {
+  if (user.role !== Role.FINANCE_USER) {
+    throw new AuthorizationError("Only finance can create invoices.")
+  }
   const batch = await getBatch(id)
-
-  let staffingCompanyId = input.staffingCompanyId
-  if (user.role === Role.STAFFING_COMPANY_ADMIN) {
-    const staffingInvoiceStatuses: WeeklyAttendanceBatchStatus[] = [
-      WeeklyAttendanceBatchStatus.APPROVED,
-      WeeklyAttendanceBatchStatus.LOCKED,
-      WeeklyAttendanceBatchStatus.SENT_TO_CORPORATE,
-      WeeklyAttendanceBatchStatus.SENT_TO_FINANCE,
-      WeeklyAttendanceBatchStatus.INVOICED,
-    ]
-    if (!staffingInvoiceStatuses.includes(batch.status)) {
-      throw new Error("Only approved staffing hours can be invoiced.")
-    }
-    if (input.type !== WeeklyAttendanceInvoiceType.STAFFING || !user.staffingCompanyId) {
-      throw new Error("Staffing company invoice access is not configured.")
-    }
-    staffingCompanyId = user.staffingCompanyId
-  } else if (user.role === Role.FINANCE_USER) {
-    if (
-      batch.status !== WeeklyAttendanceBatchStatus.SENT_TO_FINANCE &&
-      batch.status !== WeeklyAttendanceBatchStatus.INVOICED
-    ) {
-      throw new Error("Only batches sent to finance can be invoiced.")
-    }
-  } else {
-    throw new Error("You do not have permission to create this invoice.")
+  if (batch.status !== WeeklyAttendanceBatchStatus.SENT_TO_FINANCE) {
+    throw new Error("Only batches sent to finance can be invoiced.")
   }
-
-  if (input.type === WeeklyAttendanceInvoiceType.STAFFING && !staffingCompanyId) {
-    throw new Error("Select a staffing company.")
-  }
-
-  const existing = await prisma.weeklyAttendanceInvoice.findFirst({
-    where: { batchId: id, type: input.type, staffingCompanyId: staffingCompanyId ?? null },
-    include: { staffingCompany: { select: { displayName: true } } },
-  })
-  if (existing) return existing
 
   const lines = await prisma.weeklyAttendanceLine.findMany({
-    where: {
-      batchId: id,
-      staffingCompanyId:
-        input.type === WeeklyAttendanceInvoiceType.STAFFING
-          ? staffingCompanyId
-          : null,
-    },
+    where: { batchId: id, approvalStatus: WeeklyAttendanceLineApprovalStatus.APPROVED },
   })
   if (!lines.length) throw new Error("No approved attendance lines are available for this invoice.")
 
-  const invoice = await prisma.weeklyAttendanceInvoice.create({
-    data: {
-      batchId: id,
-      organizationId: batch.organizationId,
-      propertyId: batch.propertyId,
-      staffingCompanyId,
-      type: input.type,
-      status: WeeklyAttendanceInvoiceStatus.ISSUED,
-      issuedAt: new Date(),
-      regularHours: sum(lines.map((line) => Number(line.regularHours))),
-      overtimeHours: sum(lines.map((line) => Number(line.overtimeHours))),
-      totalHours: sum(lines.map((line) => Number(line.totalHours))),
-    },
-    include: { staffingCompany: { select: { displayName: true } } },
-  })
-  await audit("CREATE_WEEKLY_ATTENDANCE_INVOICE", batch, { invoiceId: invoice.id, type: invoice.type })
-  if (user.role === Role.FINANCE_USER) {
-    await prisma.weeklyAttendanceBatch.update({
+  const groups = [
+    { type: WeeklyAttendanceInvoiceType.PAYROLL, staffingCompanyId: null, lines: lines.filter((line) => !line.staffingCompanyId) },
+    ...[...new Set(lines.map((line) => line.staffingCompanyId).filter((value): value is string => Boolean(value)))]
+      .map((staffingCompanyId) => ({
+        type: WeeklyAttendanceInvoiceType.STAFFING,
+        staffingCompanyId,
+        lines: lines.filter((line) => line.staffingCompanyId === staffingCompanyId),
+      })),
+  ].filter((group) => group.lines.length > 0)
+
+  const invoices = await prisma.$transaction(async (tx) => {
+    const created = []
+    for (const group of groups) {
+      const existing = await tx.weeklyAttendanceInvoice.findFirst({
+        where: { batchId: id, type: group.type, staffingCompanyId: group.staffingCompanyId },
+        include: { staffingCompany: { select: { id: true, displayName: true } } },
+      })
+      if (existing) {
+        created.push(existing)
+        continue
+      }
+      const totalHours = sum(group.lines.map((line) => Number(line.totalHours)))
+      created.push(await tx.weeklyAttendanceInvoice.create({
+        data: {
+          invoiceNumber: invoiceNumber(batch, group.type, group.staffingCompanyId),
+          batchId: id,
+          organizationId: batch.organizationId,
+          propertyId: batch.propertyId,
+          staffingCompanyId: group.staffingCompanyId,
+          type: group.type,
+          status: WeeklyAttendanceInvoiceStatus.DRAFT,
+          billingWeekStart: batch.weekStartDate,
+          billingWeekEnd: batch.weekEndDate,
+          directHours: group.type === WeeklyAttendanceInvoiceType.PAYROLL ? totalHours : 0,
+          staffingHours: group.type === WeeklyAttendanceInvoiceType.STAFFING ? totalHours : 0,
+          regularHours: sum(group.lines.map((line) => Number(line.regularHours))),
+          overtimeHours: sum(group.lines.map((line) => Number(line.overtimeHours))),
+          totalHours,
+          totalAmount: 0,
+        },
+        include: { staffingCompany: { select: { id: true, displayName: true } } },
+      }))
+    }
+    await tx.weeklyAttendanceBatch.update({
       where: { id: batch.id },
       data: { status: WeeklyAttendanceBatchStatus.INVOICED },
     })
+    return created
+  })
+  await audit("CREATE_WEEKLY_ATTENDANCE_INVOICES", batch, { invoiceIds: invoices.map((invoice) => invoice.id) })
+  return invoices
+}
+
+export async function markWeeklyAttendanceInvoiceSent(id: string, user: CurrentUser) {
+  if (user.role !== Role.FINANCE_USER) throw new AuthorizationError("Only finance can mark invoices sent.")
+  const invoice = await getInvoice(id)
+  if (invoice.status !== WeeklyAttendanceInvoiceStatus.DRAFT) {
+    throw new Error("Only draft invoices can be marked sent.")
   }
-  return invoice
+  const updated = await prisma.weeklyAttendanceInvoice.update({
+    where: { id },
+    data: { status: WeeklyAttendanceInvoiceStatus.SENT, sentAt: new Date(), issuedAt: new Date() },
+  })
+  await invoiceAudit("MARK_WEEKLY_ATTENDANCE_INVOICE_SENT", updated)
+  return updated
 }
 
 export async function markInvoiceReviewComplete(id: string, user: CurrentUser) {
@@ -219,6 +229,7 @@ export async function markWeeklyAttendanceInvoicePaid(id: string, user: CurrentU
   const invoice = await prisma.weeklyAttendanceInvoice.findUnique({ where: { id } })
   if (!invoice) throw new Error("Weekly attendance invoice not found.")
   if (invoice.status === WeeklyAttendanceInvoiceStatus.PAID) throw new Error("Invoice is already paid.")
+  if (invoice.status !== WeeklyAttendanceInvoiceStatus.SENT) throw new Error("Only sent invoices can be marked paid.")
 
   const updated = await prisma.weeklyAttendanceInvoice.update({
     where: { id },
@@ -252,6 +263,12 @@ async function getBatch(id: string) {
   return batch
 }
 
+async function getInvoice(id: string) {
+  const invoice = await prisma.weeklyAttendanceInvoice.findUnique({ where: { id } })
+  if (!invoice) throw new Error("Weekly attendance invoice not found.")
+  return invoice
+}
+
 function assertCorporate(user: CurrentUser, organizationId: string) {
   if (user.role !== Role.CORPORATE_ADMIN && user.role !== Role.ORGANIZATION_OWNER) {
     throw new AuthorizationError("Only corporate users can perform this action.")
@@ -267,6 +284,29 @@ function assertPropertyScope(user: CurrentUser, propertyId: string) {
 
 function sum(values: number[]) {
   return Math.round(values.reduce((total, value) => total + value, 0) * 100) / 100
+}
+
+function invoiceNumber(
+  batch: { id: string; weekStartDate: Date },
+  type: WeeklyAttendanceInvoiceType,
+  staffingCompanyId: string | null,
+) {
+  const week = batch.weekStartDate.toISOString().slice(0, 10).replaceAll("-", "")
+  const suffix = staffingCompanyId ?? "DIRECT"
+  return `TN-${week}-${batch.id.slice(-6)}-${type}-${suffix}`.toUpperCase()
+}
+
+function invoiceAudit(
+  action: string,
+  invoice: { id: string; organizationId: string; propertyId: string },
+) {
+  return createAuditLog({
+    action,
+    entityType: "WeeklyAttendanceInvoice",
+    entityId: invoice.id,
+    organizationId: invoice.organizationId,
+    propertyId: invoice.propertyId,
+  })
 }
 
 function audit(action: string, batch: { id: string; organizationId: string; propertyId: string }, metadata?: Record<string, unknown>) {

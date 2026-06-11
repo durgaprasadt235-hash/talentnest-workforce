@@ -28,6 +28,7 @@ type BatchSummary = {
     staffingCompanyId: string | null
     approvalStatus: string
   }>
+  invoices: WeeklyInvoice[]
   _count: { lines: number }
 }
 type AttendanceLine = {
@@ -60,11 +61,15 @@ type BatchDetail = Omit<BatchSummary, "_count" | "lines"> & {
 }
 type WeeklyInvoice = {
   id: string
+  invoiceNumber: string
   type: "PAYROLL" | "STAFFING"
   status: string
+  directHours: string
+  staffingHours: string
   regularHours: string
   overtimeHours: string
   totalHours: string
+  totalAmount: string
   staffingCompany: { id: string; displayName: string } | null
 }
 
@@ -196,6 +201,7 @@ export function WeeklyAttendance() {
   const isCorporateAdmin = ["CORPORATE_ADMIN", "ORGANIZATION_OWNER"].includes(
     currentUser.role,
   )
+  const canSendFinance = currentUser.role === "CORPORATE_ADMIN"
   const isPropertyManager = currentUser.role === "PROPERTY_MANAGER"
   const isStaffingCompanyAdmin = [
     "STAFFING_COMPANY_ADMIN",
@@ -308,37 +314,28 @@ export function WeeklyAttendance() {
     )
   }
 
-  async function completeInvoiceReview() {
-    if (!selectedBatch) return
-    await runWorkflowAction(
-      `/api/weekly-attendance/${selectedBatch.id}/complete-review`,
-      undefined,
-      "Invoice review marked complete.",
-      selectedBatch.id,
-    )
-  }
-
   async function viewInvoiceStatus() {
     if (!selectedBatch) return
     await loadBatch(selectedBatch.id)
     setMessage("Invoice status refreshed.")
   }
 
-  async function createInvoice(type: "PAYROLL" | "STAFFING") {
+  async function createInvoice() {
     if (!selectedBatch) return
-    if (type === "STAFFING" && !isStaffingCompanyAdmin && !selectedStaffingCompanyId) {
-      return setError("Select a staffing company before creating a staffing invoice.")
-    }
     await runWorkflowAction(
-      `/api/weekly-attendance/${selectedBatch.id}/invoices`,
-      {
-        type,
-        staffingCompanyId:
-          type === "STAFFING" && selectedStaffingCompanyId
-            ? selectedStaffingCompanyId
-            : undefined,
-      },
-      `${type === "PAYROLL" ? "Payroll payable" : "Staffing invoice"} created.`,
+      `/api/weekly-attendance/${selectedBatch.id}/create-invoice`,
+      undefined,
+      "Draft direct and staffing invoices created.",
+      selectedBatch.id,
+    )
+  }
+
+  async function markInvoiceSent(invoiceId: string) {
+    if (!selectedBatch) return
+    await runWorkflowAction(
+      `/api/weekly-attendance/invoices/${invoiceId}/mark-sent`,
+      undefined,
+      "Invoice marked sent.",
       selectedBatch.id,
     )
   }
@@ -351,6 +348,28 @@ export function WeeklyAttendance() {
       "Invoice marked paid.",
       selectedBatch.id,
     )
+  }
+
+  async function exportInvoice(invoiceId: string, invoiceNumber: string) {
+    setBusy(true)
+    setError("")
+    try {
+      const response = await fetch(`/api/weekly-attendance/invoices/${invoiceId}/export`, { headers })
+      if (!response.ok) {
+        const data = await response.json()
+        throw new Error(data.error)
+      }
+      const url = window.URL.createObjectURL(await response.blob())
+      const anchor = document.createElement("a")
+      anchor.href = url
+      anchor.download = `${invoiceNumber}.csv`
+      anchor.click()
+      window.URL.revokeObjectURL(url)
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Invoice export failed.")
+    } finally {
+      setBusy(false)
+    }
   }
 
   async function runWorkflowAction(
@@ -466,6 +485,24 @@ export function WeeklyAttendance() {
         </div>
       )}
 
+      {isFinanceUser && (
+        <>
+          <div className="grid gap-4 md:grid-cols-4">
+            <SummaryCard label="Pending Finance Review" value={String(batches.filter((batch) => batch.status === "SENT_TO_FINANCE").length)} unit="batches" />
+            <SummaryCard label="Ready For Invoice" value={String(batches.filter((batch) => batch.status === "SENT_TO_FINANCE" && batch.invoices.length === 0).length)} unit="batches" />
+            <SummaryCard label="Invoices Sent" value={String(allInvoices(batches).filter((invoice) => invoice.status === "SENT").length)} unit="invoices" />
+            <SummaryCard label="Invoices Paid" value={String(allInvoices(batches).filter((invoice) => invoice.status === "PAID").length)} unit="invoices" />
+          </div>
+          <div className="grid gap-4 md:grid-cols-5">
+            <SummaryCard label="Total Direct Hours" value={sumInvoiceField(batches, "directHours")} unit="hrs" />
+            <SummaryCard label="Total Staffing Hours" value={sumInvoiceField(batches, "staffingHours")} unit="hrs" />
+            <SummaryCard label="Total Invoice Amount" value={formatCurrency(sumInvoiceAmounts(batches))} unit="amount" />
+            <SummaryCard label="Outstanding Amount" value={formatCurrency(sumInvoiceAmounts(batches, false))} unit="amount" />
+            <SummaryCard label="Paid Amount" value={formatCurrency(sumInvoiceAmounts(batches, true))} unit="amount" />
+          </div>
+        </>
+      )}
+
       {selectedBatch && !isCorporateAdmin && (
         <div className="grid gap-4 md:grid-cols-4">
           {isPropertyManager && (
@@ -520,16 +557,9 @@ export function WeeklyAttendance() {
           )}
           {isFinanceUser && (
             <>
+              <SummaryCard label="Total Direct Hours" value={selectedBatch.lines.filter((line) => !line.staffingCompany).reduce((sum, line) => sum + Number(line.totalHours), 0).toFixed(2)} unit="hrs" />
               <SummaryCard
-                label="Payroll-Ready Hours"
-                value={selectedBatch.lines
-                  .filter((line) => !line.staffingCompany)
-                  .reduce((sum, line) => sum + Number(line.totalHours), 0)
-                  .toFixed(2)}
-                unit="hrs"
-              />
-              <SummaryCard
-                label="Staffing Payable Hours"
+                label="Total Staffing Hours"
                 value={selectedBatch.lines
                   .filter((line) => line.staffingCompany)
                   .reduce((sum, line) => sum + Number(line.totalHours), 0)
@@ -537,14 +567,14 @@ export function WeeklyAttendance() {
                 unit="hrs"
               />
               <SummaryCard
-                label="Batch Status"
-                value={selectedBatch.status.replaceAll("_", " ")}
-                unit="state"
+                label="Total Invoice Amount"
+                value={formatCurrency(selectedBatch.invoices.reduce((sum, invoice) => sum + Number(invoice.totalAmount), 0))}
+                unit="amount"
               />
               <SummaryCard
-                label="Locked"
-                value={selectedBatch.status === "LOCKED" ? "Yes" : "No"}
-                unit="indicator"
+                label="Outstanding Amount"
+                value={formatCurrency(selectedBatch.invoices.filter((invoice) => invoice.status !== "PAID").reduce((sum, invoice) => sum + Number(invoice.totalAmount), 0))}
+                unit="amount"
               />
             </>
           )}
@@ -602,6 +632,7 @@ export function WeeklyAttendance() {
                       <Button size="sm" variant="outline" onClick={() => loadBatch(batch.id).catch((caught: Error) => setError(caught.message))}>View</Button>
                       {(batch.status === "PENDING_MANAGER_REVIEW" || batch.status === "CORRECTIONS_REQUIRED") && <Button size="sm" variant="outline" onClick={() => remindManager(batch.id)}>Send reminder</Button>}
                       {["APPROVED", "LOCKED", "SENT_TO_CORPORATE"].includes(batch.status) && <Button size="sm" variant="outline" onClick={() => returnToManager(batch.id)}>Return to manager</Button>}
+                      {canSendFinance && batch.status === "LOCKED" && <Button size="sm" onClick={() => runWorkflowAction(`/api/weekly-attendance/${batch.id}/send-finance`, undefined, "Locked weekly attendance sent to finance.")}>Send To Finance</Button>}
                       <Button size="sm" variant="outline" onClick={() => exportReport("property", batch.id)}>Export property</Button>
                     </div></TableCell>
                   </> : <>
@@ -640,7 +671,7 @@ export function WeeklyAttendance() {
                     <Button disabled={busy} size="sm" variant="outline" onClick={() => exportReport("staffing-timesheet")}>
                       Export staffing report
                     </Button>
-                    <Button disabled={busy || selectedBatch.status !== "SENT_TO_CORPORATE"} size="sm" variant="outline" onClick={sendToFinance}>Send to Finance</Button>
+                    {canSendFinance && <Button disabled={busy || selectedBatch.status !== "LOCKED"} size="sm" variant="outline" onClick={sendToFinance}>Send to Finance</Button>}
                   </>
                 )}
                 {isPropertyManager && (
@@ -665,7 +696,6 @@ export function WeeklyAttendance() {
                     <Button disabled={busy} size="sm" onClick={() => exportReport("staffing-timesheet")}>
                       Export timesheet
                     </Button>
-                    <Button disabled={busy} size="sm" variant="outline" onClick={() => createInvoice("STAFFING")}>Generate staffing invoice</Button>
                     <Button disabled={busy} size="sm" variant="outline" onClick={viewInvoiceStatus}>View invoice status</Button>
                   </>
                 )}
@@ -677,9 +707,7 @@ export function WeeklyAttendance() {
                     <Button disabled={busy} size="sm" variant="outline" onClick={() => exportReport("staffing-timesheet")}>
                       Export staffing payable
                     </Button>
-                    <Button disabled={busy || !["SENT_TO_FINANCE", "INVOICED"].includes(selectedBatch.status)} size="sm" variant="outline" onClick={() => createInvoice("PAYROLL")}>Create invoice batch</Button>
-                    <Button disabled={busy || !staffingCompanies.length || !["SENT_TO_FINANCE", "INVOICED"].includes(selectedBatch.status)} size="sm" variant="outline" onClick={() => createInvoice("STAFFING")}>Create staffing invoice</Button>
-                    <Button disabled={busy || !["SENT_TO_FINANCE", "INVOICED"].includes(selectedBatch.status)} size="sm" variant="outline" onClick={completeInvoiceReview}>Mark invoice review complete</Button>
+                    <Button disabled={busy || selectedBatch.status !== "SENT_TO_FINANCE"} size="sm" variant="outline" onClick={createInvoice}>Create Invoice</Button>
                   </>
                 )}
               </div>
@@ -740,17 +768,23 @@ export function WeeklyAttendance() {
               <div className="border-t p-5">
                 <h3 className="mb-3 font-semibold">Invoices and payables</h3>
                 <Table>
-                  <thead><tr><TableHead>Type</TableHead><TableHead>Staffing company</TableHead><TableHead>Regular</TableHead><TableHead>Overtime</TableHead><TableHead>Total</TableHead><TableHead>Status</TableHead>{isFinanceUser && <TableHead>Action</TableHead>}</tr></thead>
+                  <thead><tr><TableHead>Invoice</TableHead><TableHead>Type</TableHead><TableHead>Staffing company</TableHead><TableHead>Direct hours</TableHead><TableHead>Staffing hours</TableHead><TableHead>Total hours</TableHead><TableHead>Amount</TableHead><TableHead>Status</TableHead>{isFinanceUser && <TableHead>Action</TableHead>}</tr></thead>
                   <tbody>
                     {selectedBatch.invoices.map((invoice) => (
                       <tr key={invoice.id}>
+                        <TableCell className="font-mono text-xs">{invoice.invoiceNumber}</TableCell>
                         <TableCell>{invoice.type}</TableCell>
                         <TableCell>{invoice.staffingCompany?.displayName ?? "Direct payroll"}</TableCell>
-                        <TableCell>{formatHours(invoice.regularHours)}</TableCell>
-                        <TableCell>{formatHours(invoice.overtimeHours)}</TableCell>
+                        <TableCell>{formatHours(invoice.directHours)}</TableCell>
+                        <TableCell>{formatHours(invoice.staffingHours)}</TableCell>
                         <TableCell>{formatHours(invoice.totalHours)}</TableCell>
+                        <TableCell>{formatCurrency(Number(invoice.totalAmount))}</TableCell>
                         <TableCell><StatusBadge status={invoice.status} /></TableCell>
-                        {isFinanceUser && <TableCell>{invoice.status !== "PAID" ? <Button size="sm" onClick={() => markInvoicePaid(invoice.id)}>Mark paid</Button> : "--"}</TableCell>}
+                        {isFinanceUser && <TableCell><div className="flex flex-wrap gap-2">
+                          <Button size="sm" variant="outline" onClick={() => exportInvoice(invoice.id, invoice.invoiceNumber)}>Export Invoice</Button>
+                          {invoice.status === "DRAFT" && <Button size="sm" onClick={() => markInvoiceSent(invoice.id)}>Mark Sent</Button>}
+                          {invoice.status === "SENT" && <Button size="sm" onClick={() => markInvoicePaid(invoice.id)}>Mark Paid</Button>}
+                        </div></TableCell>}
                       </tr>
                     ))}
                   </tbody>
@@ -846,6 +880,26 @@ function sumBatchHours(batches: BatchSummary[], staffing: boolean) {
     .filter((line) => Boolean(line.staffingCompanyId) === staffing)
     .reduce((total, line) => total + Number(line.totalHours), 0)
     .toFixed(2)
+}
+
+function allInvoices(batches: BatchSummary[]) {
+  return batches.flatMap((batch) => batch.invoices)
+}
+
+function sumInvoiceField(batches: BatchSummary[], field: "directHours" | "staffingHours") {
+  return allInvoices(batches)
+    .reduce((total, invoice) => total + Number(invoice[field]), 0)
+    .toFixed(2)
+}
+
+function sumInvoiceAmounts(batches: BatchSummary[], paid?: boolean) {
+  return allInvoices(batches)
+    .filter((invoice) => paid === undefined || (invoice.status === "PAID") === paid)
+    .reduce((total, invoice) => total + Number(invoice.totalAmount), 0)
+}
+
+function formatCurrency(value: number) {
+  return new Intl.NumberFormat(undefined, { style: "currency", currency: "USD" }).format(value)
 }
 
 function currentWeekStart() {

@@ -29,6 +29,22 @@ const batchSummaryInclude = {
       approvalStatus: true,
     },
   },
+  invoices: {
+    select: {
+      id: true,
+      invoiceNumber: true,
+      type: true,
+      status: true,
+      directHours: true,
+      staffingHours: true,
+      regularHours: true,
+      overtimeHours: true,
+      totalHours: true,
+      totalAmount: true,
+      staffingCompanyId: true,
+      staffingCompany: { select: { id: true, displayName: true } },
+    },
+  },
   _count: { select: { lines: true } },
 } satisfies Prisma.WeeklyAttendanceBatchInclude
 
@@ -182,13 +198,17 @@ async function listStaffingCompanyBatches(staffingCompanyId: string, filters: We
     }),
   ])
 
-  return { batches, options: { organizations, properties } }
+  return {
+    batches: batches.map((batch) => ({
+      ...batch,
+      invoices: batch.invoices.filter((invoice) => invoice.staffingCompanyId === staffingCompanyId),
+    })),
+    options: { organizations, properties },
+  }
 }
 
 async function listFinanceBatches(filters: WeeklyAttendanceFilters) {
   const financeStatuses: WeeklyAttendanceBatchStatus[] = [
-    WeeklyAttendanceBatchStatus.APPROVED,
-    WeeklyAttendanceBatchStatus.LOCKED,
     WeeklyAttendanceBatchStatus.SENT_TO_FINANCE,
     WeeklyAttendanceBatchStatus.INVOICED,
     WeeklyAttendanceBatchStatus.PAID,
@@ -292,8 +312,6 @@ export async function getWeeklyAttendanceBatchByRole(
 
   if (user.role === "FINANCE_USER") {
     const visibleFinanceStatuses: WeeklyAttendanceBatchStatus[] = [
-      WeeklyAttendanceBatchStatus.APPROVED,
-      WeeklyAttendanceBatchStatus.LOCKED,
       WeeklyAttendanceBatchStatus.SENT_TO_FINANCE,
       WeeklyAttendanceBatchStatus.INVOICED,
       WeeklyAttendanceBatchStatus.PAID,

@@ -1,4 +1,3 @@
-import { WeeklyAttendanceInvoiceType } from "@prisma/client"
 import { z } from "zod"
 
 const requiredText = z.string().trim().min(1).max(200)
@@ -24,11 +23,6 @@ export const batchGenerateWeeklyAttendanceSchema = z.object({
   weekStartDate: z.iso.date(),
 })
 
-export const createWeeklyAttendanceInvoiceSchema = z.object({
-  type: z.enum(WeeklyAttendanceInvoiceType),
-  staffingCompanyId: requiredText.optional(),
-})
-
 export type GenerateWeeklyAttendanceInput = z.infer<
   typeof generateWeeklyAttendanceSchema
 >
@@ -40,7 +34,4 @@ export type RequestWeeklyAttendanceCorrectionsInput = z.infer<
 >
 export type BatchGenerateWeeklyAttendanceInput = z.infer<
   typeof batchGenerateWeeklyAttendanceSchema
->
-export type CreateWeeklyAttendanceInvoiceInput = z.infer<
-  typeof createWeeklyAttendanceInvoiceSchema
 >

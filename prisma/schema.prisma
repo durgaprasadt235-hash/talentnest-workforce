@@ -149,7 +149,7 @@ enum WeeklyAttendanceInvoiceType {
 
 enum WeeklyAttendanceInvoiceStatus {
   DRAFT
-  ISSUED
+  SENT
   PAID
 }
 
@@ -546,15 +546,22 @@ model WeeklyAttendanceBatch {
 
 model WeeklyAttendanceInvoice {
   id                String                        @id @default(cuid())
+  invoiceNumber     String                        @unique
   batchId           String
   organizationId    String
   propertyId        String
   staffingCompanyId String?
   type              WeeklyAttendanceInvoiceType
   status            WeeklyAttendanceInvoiceStatus @default(DRAFT)
+  billingWeekStart  DateTime                      @db.Date
+  billingWeekEnd    DateTime                      @db.Date
+  directHours       Decimal                       @default(0) @db.Decimal(8, 2)
+  staffingHours     Decimal                       @default(0) @db.Decimal(8, 2)
   regularHours      Decimal                       @db.Decimal(8, 2)
   overtimeHours     Decimal                       @db.Decimal(8, 2)
   totalHours        Decimal                       @db.Decimal(8, 2)
+  totalAmount       Decimal                       @default(0) @db.Decimal(12, 2)
+  sentAt            DateTime?
   issuedAt          DateTime?
   paidAt            DateTime?
   createdAt         DateTime                      @default(now())
