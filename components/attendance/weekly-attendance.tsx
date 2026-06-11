@@ -113,6 +113,7 @@ export function WeeklyAttendance() {
     setBatches(data.batches)
     setOrganizations(data.options.organizations)
     setProperties(data.options.properties)
+    if (data.message) setMessage(data.message)
   }, [headers, filterOrganizationId, filterPropertyId, filterStatus])
 
   const loadBatch = useCallback(

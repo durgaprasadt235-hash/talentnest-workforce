@@ -1,3 +1,5 @@
+import { WeeklyAttendanceBatchStatus } from "@prisma/client"
+
 import { errorResponse } from "@/src/lib/http"
 import { Permission } from "@/src/lib/rbac/permissions"
 import { requireServerPermission } from "@/src/lib/rbac/server-guard"
@@ -20,4 +22,3 @@ export async function GET(request: Request) {
     return errorResponse(error, 500)
   }
 }
-import { WeeklyAttendanceBatchStatus } from "@prisma/client"

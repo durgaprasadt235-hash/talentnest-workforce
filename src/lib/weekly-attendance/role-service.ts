@@ -30,7 +30,11 @@ export async function listWeeklyAttendanceByRole(
     role === "STAFFING_COMPANY_COORDINATOR"
   ) {
     if (!user.staffingCompanyId) {
-      return { batches: [], options: { organizations: [], properties: [] } }
+      return {
+        batches: [],
+        options: { organizations: [], properties: [] },
+        message: "No staffing company is assigned to the current mock user.",
+      }
     }
     return listStaffingCompanyBatches(user.staffingCompanyId, filters)
   }
@@ -51,10 +55,11 @@ export async function listWeeklyAttendanceByRole(
 }
 
 async function listCorporateBatches(organizationId: string | undefined, filters: WeeklyAttendanceFilters) {
+  const batchOrganizationId = filters.organizationId ?? organizationId
   const [batches, organizations, properties] = await Promise.all([
     prisma.weeklyAttendanceBatch.findMany({
       where: {
-        organizationId: filters.organizationId ?? organizationId,
+        organizationId: batchOrganizationId,
         propertyId: filters.propertyId,
         status: filters.status,
       },
@@ -66,15 +71,12 @@ async function listCorporateBatches(organizationId: string | undefined, filters:
       orderBy: [{ weekStartDate: "desc" }, { generatedAt: "desc" }],
     }),
     prisma.organization.findMany({
-      where: { id: organizationId, status: RecordStatus.ACTIVE },
+      where: { status: RecordStatus.ACTIVE },
       select: { id: true, name: true },
       orderBy: { name: "asc" },
     }),
     prisma.property.findMany({
-      where: {
-        organizationId: filters.organizationId ?? organizationId,
-        status: RecordStatus.ACTIVE,
-      },
+      where: { status: RecordStatus.ACTIVE },
       select: { id: true, organizationId: true, name: true },
       orderBy: { name: "asc" },
     }),
@@ -84,13 +86,19 @@ async function listCorporateBatches(organizationId: string | undefined, filters:
 }
 
 async function listPropertyManagerBatches(propertyIds: string[] | undefined, filters: WeeklyAttendanceFilters) {
+  const assignedPropertyIds = propertyIds?.length ? propertyIds : undefined
+  const requestedPropertyId =
+    filters.propertyId &&
+    (!assignedPropertyIds || assignedPropertyIds.includes(filters.propertyId))
+      ? filters.propertyId
+      : undefined
   const [batches, properties] = await Promise.all([
     prisma.weeklyAttendanceBatch.findMany({
       where: {
-        propertyId: filters.propertyId
-          ? filters.propertyId
-          : propertyIds?.length
-            ? { in: propertyIds }
+        propertyId: requestedPropertyId
+          ? requestedPropertyId
+          : assignedPropertyIds
+            ? { in: assignedPropertyIds }
             : undefined,
         organizationId: filters.organizationId,
         status: filters.status,
@@ -104,7 +112,7 @@ async function listPropertyManagerBatches(propertyIds: string[] | undefined, fil
     }),
     prisma.property.findMany({
       where: {
-        id: propertyIds?.length ? { in: propertyIds } : undefined,
+        id: assignedPropertyIds ? { in: assignedPropertyIds } : undefined,
         organizationId: filters.organizationId,
         status: RecordStatus.ACTIVE,
       },
@@ -185,9 +193,12 @@ async function listFinanceBatches(filters: WeeklyAttendanceFilters) {
     orderBy: [{ weekStartDate: "desc" }, { generatedAt: "desc" }],
   })
 
-  // Extract options
-  const organizationIds = [...new Set(batches.map((b) => b.organizationId))]
-  const propertyIds = [...new Set(batches.map((b) => b.propertyId))]
+  const eligibleBatches = await prisma.weeklyAttendanceBatch.findMany({
+    where: { status: { in: ["APPROVED", "LOCKED"] } },
+    select: { organizationId: true, propertyId: true },
+  })
+  const organizationIds = [...new Set(eligibleBatches.map((batch) => batch.organizationId))]
+  const propertyIds = [...new Set(eligibleBatches.map((batch) => batch.propertyId))]
 
   const [organizations, properties] = await Promise.all([
     prisma.organization.findMany({
@@ -269,11 +280,15 @@ export async function getWeeklyAttendanceBatchByRole(
   }
 
   if (user.role === "PROPERTY_MANAGER") {
-    if (!user.propertyIds?.includes(batch.propertyId)) throw new Error("Unauthorized.")
+    if (user.propertyIds?.length && !user.propertyIds.includes(batch.propertyId)) {
+      throw new Error("Unauthorized.")
+    }
   }
 
   if (user.role === "CORPORATE_ADMIN" || user.role === "ORGANIZATION_OWNER") {
-    if (batch.organizationId !== user.organizationId) throw new Error("Unauthorized.")
+    if (user.organizationId && batch.organizationId !== user.organizationId) {
+      throw new Error("Unauthorized.")
+    }
   }
 
   return batch
