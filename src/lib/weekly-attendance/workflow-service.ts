@@ -7,67 +7,53 @@ import {
 import { createAuditLog } from "@/src/lib/audit"
 import { prisma } from "@/src/lib/prisma"
 import type { CurrentUser } from "@/src/lib/rbac/current-user"
+import { AuthorizationError } from "@/src/lib/rbac/server-guard"
 import { Role } from "@/src/lib/rbac/roles"
-import { generateWeeklyAttendance } from "@/src/lib/weekly-attendance/service"
-import type {
-  BatchGenerateWeeklyAttendanceInput,
-  CreateWeeklyAttendanceInvoiceInput,
-} from "@/src/lib/weekly-attendance/validation"
+import type { CreateWeeklyAttendanceInvoiceInput } from "@/src/lib/weekly-attendance/validation"
 
-const readyStatuses: WeeklyAttendanceBatchStatus[] = [
+const corporateReadyStatuses: WeeklyAttendanceBatchStatus[] = [
   WeeklyAttendanceBatchStatus.APPROVED,
   WeeklyAttendanceBatchStatus.LOCKED,
 ]
-
-export async function generateWeeklyAttendanceForProperties(
-  user: CurrentUser,
-  input: BatchGenerateWeeklyAttendanceInput,
-) {
-  assertCorporate(user, input.organizationId)
-  const properties = await prisma.property.findMany({
-    where: { id: { in: input.propertyIds }, organizationId: input.organizationId },
-    select: { id: true },
-  })
-  if (properties.length !== new Set(input.propertyIds).size) {
-    throw new Error("One or more selected properties are invalid.")
-  }
-
-  const batches = []
-  for (const property of properties) {
-    batches.push(await generateWeeklyAttendance({
-      organizationId: input.organizationId,
-      propertyId: property.id,
-      weekStartDate: input.weekStartDate,
-    }))
-  }
-  return batches
-}
 
 export function assertWeeklyAttendanceGenerationScope(
   user: CurrentUser,
   input: { organizationId: string; propertyId: string },
 ) {
-  if (user.role !== Role.PROPERTY_MANAGER) throw new Error("Only property managers can generate a property batch.")
+  if (user.role !== Role.PROPERTY_MANAGER) throw new AuthorizationError("Only property managers can generate a property batch.")
   if (user.organizationId && user.organizationId !== input.organizationId) throw new Error("Unauthorized.")
   assertPropertyScope(user, input.propertyId)
 }
 
 export async function assertPropertyManagerBatchScope(id: string, user: CurrentUser) {
-  if (user.role !== Role.PROPERTY_MANAGER) throw new Error("Only property managers can modify attendance batches.")
+  if (user.role !== Role.PROPERTY_MANAGER) throw new AuthorizationError("Only property managers can modify attendance batches.")
   const batch = await getBatch(id)
   assertPropertyScope(user, batch.propertyId)
+  if (
+    batch.status === WeeklyAttendanceBatchStatus.SENT_TO_CORPORATE ||
+    batch.status === WeeklyAttendanceBatchStatus.SENT_TO_FINANCE ||
+    batch.status === WeeklyAttendanceBatchStatus.INVOICED ||
+    batch.status === WeeklyAttendanceBatchStatus.PAID
+  ) {
+    throw new Error("Submitted attendance batches cannot be modified by the property manager.")
+  }
   return batch
 }
 
 export async function sendWeeklyAttendanceToCorporate(id: string, user: CurrentUser) {
   const batch = await getBatch(id)
-  if (user.role !== Role.PROPERTY_MANAGER) throw new Error("Only property managers can send batches to corporate.")
+  if (user.role !== Role.PROPERTY_MANAGER) throw new AuthorizationError("Only property managers can send batches to corporate.")
   assertPropertyScope(user, batch.propertyId)
-  assertReady(batch.status)
+  if (!corporateReadyStatuses.includes(batch.status)) {
+    throw new Error("Only approved or locked batches can be submitted to corporate.")
+  }
 
   const updated = await prisma.weeklyAttendanceBatch.update({
     where: { id },
-    data: { sentToCorporateAt: new Date() },
+    data: {
+      status: WeeklyAttendanceBatchStatus.SENT_TO_CORPORATE,
+      sentToCorporateAt: new Date(),
+    },
   })
   await audit("SEND_WEEKLY_ATTENDANCE_TO_CORPORATE", updated)
   return updated
@@ -76,14 +62,58 @@ export async function sendWeeklyAttendanceToCorporate(id: string, user: CurrentU
 export async function sendWeeklyAttendanceToFinance(id: string, user: CurrentUser) {
   const batch = await getBatch(id)
   assertCorporate(user, batch.organizationId)
-  assertReady(batch.status)
-  if (!batch.sentToCorporateAt) throw new Error("The property must send this batch to corporate first.")
+  if (batch.status !== WeeklyAttendanceBatchStatus.SENT_TO_CORPORATE) {
+    throw new Error("Only batches submitted to corporate can be sent to finance.")
+  }
 
   const updated = await prisma.weeklyAttendanceBatch.update({
     where: { id },
-    data: { sentToFinanceAt: new Date() },
+    data: {
+      status: WeeklyAttendanceBatchStatus.SENT_TO_FINANCE,
+      sentToFinanceAt: new Date(),
+    },
   })
   await audit("SEND_WEEKLY_ATTENDANCE_TO_FINANCE", updated)
+  return updated
+}
+
+export async function sendManagerReminder(id: string, user: CurrentUser) {
+  const batch = await getBatch(id)
+  assertCorporate(user, batch.organizationId)
+  if (
+    batch.status !== WeeklyAttendanceBatchStatus.PENDING_MANAGER_REVIEW &&
+    batch.status !== WeeklyAttendanceBatchStatus.CORRECTIONS_REQUIRED
+  ) {
+    throw new Error("A reminder can only be sent for a batch awaiting manager action.")
+  }
+  const updated = await prisma.weeklyAttendanceBatch.update({
+    where: { id },
+    data: { managerReminderAt: new Date() },
+  })
+  await audit("SEND_WEEKLY_ATTENDANCE_MANAGER_REMINDER", updated)
+  return updated
+}
+
+export async function returnWeeklyAttendanceToManager(id: string, user: CurrentUser) {
+  const batch = await getBatch(id)
+  assertCorporate(user, batch.organizationId)
+  if (
+    batch.status !== WeeklyAttendanceBatchStatus.SENT_TO_CORPORATE &&
+    batch.status !== WeeklyAttendanceBatchStatus.APPROVED &&
+    batch.status !== WeeklyAttendanceBatchStatus.LOCKED
+  ) {
+    throw new Error("This batch cannot be returned to the property manager.")
+  }
+  const updated = await prisma.weeklyAttendanceBatch.update({
+    where: { id },
+    data: {
+      status: WeeklyAttendanceBatchStatus.PENDING_MANAGER_REVIEW,
+      sentToCorporateAt: null,
+      sentToFinanceAt: null,
+      financeReviewedAt: null,
+    },
+  })
+  await audit("RETURN_WEEKLY_ATTENDANCE_TO_MANAGER", updated)
   return updated
 }
 
@@ -93,16 +123,30 @@ export async function createWeeklyAttendanceInvoice(
   input: CreateWeeklyAttendanceInvoiceInput,
 ) {
   const batch = await getBatch(id)
-  assertReady(batch.status)
 
   let staffingCompanyId = input.staffingCompanyId
   if (user.role === Role.STAFFING_COMPANY_ADMIN) {
+    const staffingInvoiceStatuses: WeeklyAttendanceBatchStatus[] = [
+      WeeklyAttendanceBatchStatus.APPROVED,
+      WeeklyAttendanceBatchStatus.LOCKED,
+      WeeklyAttendanceBatchStatus.SENT_TO_CORPORATE,
+      WeeklyAttendanceBatchStatus.SENT_TO_FINANCE,
+      WeeklyAttendanceBatchStatus.INVOICED,
+    ]
+    if (!staffingInvoiceStatuses.includes(batch.status)) {
+      throw new Error("Only approved staffing hours can be invoiced.")
+    }
     if (input.type !== WeeklyAttendanceInvoiceType.STAFFING || !user.staffingCompanyId) {
       throw new Error("Staffing company invoice access is not configured.")
     }
     staffingCompanyId = user.staffingCompanyId
   } else if (user.role === Role.FINANCE_USER) {
-    if (!batch.sentToFinanceAt) throw new Error("This batch has not been sent to finance.")
+    if (
+      batch.status !== WeeklyAttendanceBatchStatus.SENT_TO_FINANCE &&
+      batch.status !== WeeklyAttendanceBatchStatus.INVOICED
+    ) {
+      throw new Error("Only batches sent to finance can be invoiced.")
+    }
   } else {
     throw new Error("You do not have permission to create this invoice.")
   }
@@ -144,11 +188,34 @@ export async function createWeeklyAttendanceInvoice(
     include: { staffingCompany: { select: { displayName: true } } },
   })
   await audit("CREATE_WEEKLY_ATTENDANCE_INVOICE", batch, { invoiceId: invoice.id, type: invoice.type })
+  if (user.role === Role.FINANCE_USER) {
+    await prisma.weeklyAttendanceBatch.update({
+      where: { id: batch.id },
+      data: { status: WeeklyAttendanceBatchStatus.INVOICED },
+    })
+  }
   return invoice
 }
 
+export async function markInvoiceReviewComplete(id: string, user: CurrentUser) {
+  if (user.role !== Role.FINANCE_USER) throw new AuthorizationError("Only finance can complete invoice review.")
+  const batch = await getBatch(id)
+  if (
+    batch.status !== WeeklyAttendanceBatchStatus.SENT_TO_FINANCE &&
+    batch.status !== WeeklyAttendanceBatchStatus.INVOICED
+  ) {
+    throw new Error("Only finance-ready or invoiced batches can complete review.")
+  }
+  const updated = await prisma.weeklyAttendanceBatch.update({
+    where: { id },
+    data: { financeReviewedAt: new Date() },
+  })
+  await audit("COMPLETE_WEEKLY_ATTENDANCE_INVOICE_REVIEW", updated)
+  return updated
+}
+
 export async function markWeeklyAttendanceInvoicePaid(id: string, user: CurrentUser) {
-  if (user.role !== Role.FINANCE_USER) throw new Error("Only finance can mark invoices paid.")
+  if (user.role !== Role.FINANCE_USER) throw new AuthorizationError("Only finance can mark invoices paid.")
   const invoice = await prisma.weeklyAttendanceInvoice.findUnique({ where: { id } })
   if (!invoice) throw new Error("Weekly attendance invoice not found.")
   if (invoice.status === WeeklyAttendanceInvoiceStatus.PAID) throw new Error("Invoice is already paid.")
@@ -164,6 +231,18 @@ export async function markWeeklyAttendanceInvoicePaid(id: string, user: CurrentU
     organizationId: updated.organizationId,
     propertyId: updated.propertyId,
   })
+  const remaining = await prisma.weeklyAttendanceInvoice.count({
+    where: {
+      batchId: updated.batchId,
+      status: { not: WeeklyAttendanceInvoiceStatus.PAID },
+    },
+  })
+  if (remaining === 0) {
+    await prisma.weeklyAttendanceBatch.update({
+      where: { id: updated.batchId },
+      data: { status: WeeklyAttendanceBatchStatus.PAID },
+    })
+  }
   return updated
 }
 
@@ -175,17 +254,15 @@ async function getBatch(id: string) {
 
 function assertCorporate(user: CurrentUser, organizationId: string) {
   if (user.role !== Role.CORPORATE_ADMIN && user.role !== Role.ORGANIZATION_OWNER) {
-    throw new Error("Only corporate users can perform this action.")
+    throw new AuthorizationError("Only corporate users can perform this action.")
   }
   if (user.organizationId && user.organizationId !== organizationId) throw new Error("Unauthorized.")
 }
 
 function assertPropertyScope(user: CurrentUser, propertyId: string) {
-  if (user.propertyIds?.length && !user.propertyIds.includes(propertyId)) throw new Error("Unauthorized.")
-}
-
-function assertReady(status: WeeklyAttendanceBatchStatus) {
-  if (!readyStatuses.includes(status)) throw new Error("Only approved or locked batches can continue in the workflow.")
+  if (!user.propertyIds?.includes(propertyId)) {
+    throw new AuthorizationError("This property is not assigned to the current property manager.")
+  }
 }
 
 function sum(values: number[]) {

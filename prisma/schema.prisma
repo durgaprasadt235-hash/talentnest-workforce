@@ -123,6 +123,10 @@ enum WeeklyAttendanceBatchStatus {
   APPROVED
   CORRECTIONS_REQUIRED
   LOCKED
+  SENT_TO_CORPORATE
+  SENT_TO_FINANCE
+  INVOICED
+  PAID
 }
 
 enum WeeklyAttendanceLineApprovalStatus {
@@ -524,6 +528,8 @@ model WeeklyAttendanceBatch {
   approvedAt        DateTime?
   sentToCorporateAt DateTime?
   sentToFinanceAt   DateTime?
+  managerReminderAt DateTime?
+  financeReviewedAt DateTime?
   createdAt         DateTime                    @default(now())
   updatedAt         DateTime                    @updatedAt
 
