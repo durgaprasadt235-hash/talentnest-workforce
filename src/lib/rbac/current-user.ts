@@ -11,6 +11,19 @@ export const DEFAULT_CURRENT_USER: CurrentUser = {
   role: Role.CORPORATE_ADMIN,
 }
 
-export function createMockCurrentUser(role: Role, context?: { organizationId?: string; propertyIds?: string[]; staffingCompanyId?: string }): CurrentUser {
-  return { role, ...context }
+const MOCK_ROLE_CONTEXT: Partial<Record<Role, Omit<CurrentUser, "role">>> = {
+  [Role.PROPERTY_MANAGER]: {
+    propertyIds: ["seed-best-western-erie"],
+  },
+}
+
+export function createMockCurrentUser(
+  role: Role,
+  context?: Omit<CurrentUser, "role">,
+): CurrentUser {
+  return {
+    role,
+    ...MOCK_ROLE_CONTEXT[role],
+    ...context,
+  }
 }

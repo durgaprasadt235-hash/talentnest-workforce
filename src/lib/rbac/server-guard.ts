@@ -1,4 +1,8 @@
-import { DEFAULT_CURRENT_USER, type CurrentUser } from "@/src/lib/rbac/current-user"
+import {
+  createMockCurrentUser,
+  DEFAULT_CURRENT_USER,
+  type CurrentUser,
+} from "@/src/lib/rbac/current-user"
 import { hasPermission } from "@/src/lib/rbac/guards"
 import {
   MOCK_ORGANIZATION_HEADER,
@@ -29,12 +33,11 @@ export function getServerCurrentUser(request: Request): CurrentUser {
     }
   }
 
-  return {
-    role: role ?? DEFAULT_CURRENT_USER.role,
-    organizationId,
-    propertyIds,
-    staffingCompanyId,
-  }
+  return createMockCurrentUser(role ?? DEFAULT_CURRENT_USER.role, {
+    ...(organizationId ? { organizationId } : {}),
+    ...(propertyIds ? { propertyIds } : {}),
+    ...(staffingCompanyId ? { staffingCompanyId } : {}),
+  })
 }
 
 export function requireServerPermission(

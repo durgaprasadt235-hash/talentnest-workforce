@@ -111,20 +111,14 @@ async function listCorporateBatches(organizationId: string | undefined, filters:
 }
 
 async function listPropertyManagerBatches(propertyIds: string[] | undefined, filters: WeeklyAttendanceFilters) {
-  const assignedPropertyIds = propertyIds?.length ? propertyIds : undefined
-  const requestedPropertyId =
-    filters.propertyId &&
-    (!assignedPropertyIds || assignedPropertyIds.includes(filters.propertyId))
-      ? filters.propertyId
-      : undefined
+  const assignedPropertyIds = propertyIds ?? []
+  const visiblePropertyIds = filters.propertyId
+    ? assignedPropertyIds.filter((propertyId) => propertyId === filters.propertyId)
+    : assignedPropertyIds
   const [batches, properties] = await Promise.all([
     prisma.weeklyAttendanceBatch.findMany({
       where: {
-        propertyId: requestedPropertyId
-          ? requestedPropertyId
-          : assignedPropertyIds
-            ? { in: assignedPropertyIds }
-            : undefined,
+        propertyId: { in: visiblePropertyIds },
         organizationId: filters.organizationId,
         status: filters.status,
       },
@@ -133,7 +127,7 @@ async function listPropertyManagerBatches(propertyIds: string[] | undefined, fil
     }),
     prisma.property.findMany({
       where: {
-        id: assignedPropertyIds ? { in: assignedPropertyIds } : undefined,
+        id: { in: assignedPropertyIds },
         organizationId: filters.organizationId,
         status: RecordStatus.ACTIVE,
       },
@@ -322,7 +316,7 @@ export async function getWeeklyAttendanceBatchByRole(
   }
 
   if (user.role === "PROPERTY_MANAGER") {
-    if (user.propertyIds?.length && !user.propertyIds.includes(batch.propertyId)) {
+    if (!user.propertyIds?.includes(batch.propertyId)) {
       throw new Error("Unauthorized.")
     }
   }
