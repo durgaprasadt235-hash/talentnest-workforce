@@ -62,7 +62,7 @@ type BatchDetail = Omit<BatchSummary, "_count" | "lines"> & {
 type WeeklyInvoice = {
   id: string
   invoiceNumber: string
-  type: "PAYROLL" | "STAFFING"
+  type: "DIRECT" | "STAFFING" | "CONSOLIDATED"
   status: string
   directHours: string
   staffingHours: string

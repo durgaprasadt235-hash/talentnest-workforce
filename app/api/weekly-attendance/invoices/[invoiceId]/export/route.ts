@@ -1,8 +1,7 @@
 import { errorResponse } from "@/src/lib/http"
-import { prisma } from "@/src/lib/prisma"
+import { getInvoiceDetail } from "@/src/lib/invoices/service"
 import { Permission } from "@/src/lib/rbac/permissions"
-import { AuthorizationError, requireServerPermission } from "@/src/lib/rbac/server-guard"
-import { Role } from "@/src/lib/rbac/roles"
+import { requireServerPermission } from "@/src/lib/rbac/server-guard"
 
 export async function GET(
   request: Request,
@@ -10,17 +9,8 @@ export async function GET(
 ) {
   try {
     const user = requireServerPermission(request, Permission.VIEW_INVOICES)
-    if (user.role !== Role.FINANCE_USER) throw new AuthorizationError("Only finance can export invoices.")
     const { invoiceId } = await context.params
-    const invoice = await prisma.weeklyAttendanceInvoice.findUnique({
-      where: { id: invoiceId },
-      include: {
-        organization: { select: { name: true } },
-        property: { select: { name: true } },
-        staffingCompany: { select: { displayName: true } },
-      },
-    })
-    if (!invoice) throw new Error("Weekly attendance invoice not found.")
+    const invoice = await getInvoiceDetail(invoiceId, user)
 
     const rows = [
       ["Invoice Number", invoice.invoiceNumber],
@@ -32,9 +22,22 @@ export async function GET(
       ["Direct Hours", invoice.directHours.toString()],
       ["Staffing Hours", invoice.staffingHours.toString()],
       ["Total Hours", invoice.totalHours.toString()],
+      ["Rate", invoice.rate.toString()],
       ["Total Amount", invoice.totalAmount.toString()],
       ["Status", invoice.status],
     ]
+    rows.push([], ["Employee", "Employee Number", "Department", "Staffing Company", "Regular Hours", "Overtime Hours", "Total Hours"])
+    for (const line of invoice.lines) {
+      rows.push([
+        `${line.employee.firstName} ${line.employee.lastName}`,
+        line.employee.employeeNumber,
+        line.department?.name ?? "Not assigned",
+        line.staffingCompany?.displayName ?? "Direct",
+        line.regularHours.toString(),
+        line.overtimeHours.toString(),
+        line.totalHours.toString(),
+      ])
+    }
     const csv = rows.map((row) => row.map(csvCell).join(",")).join("\n")
     return new Response(csv, {
       headers: {

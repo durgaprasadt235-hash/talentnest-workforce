@@ -141,7 +141,7 @@ export async function createWeeklyAttendanceInvoice(
   if (!lines.length) throw new Error("No approved attendance lines are available for this invoice.")
 
   const groups = [
-    { type: WeeklyAttendanceInvoiceType.PAYROLL, staffingCompanyId: null, lines: lines.filter((line) => !line.staffingCompanyId) },
+    { type: WeeklyAttendanceInvoiceType.DIRECT, staffingCompanyId: null, lines: lines.filter((line) => !line.staffingCompanyId) },
     ...[...new Set(lines.map((line) => line.staffingCompanyId).filter((value): value is string => Boolean(value)))]
       .map((staffingCompanyId) => ({
         type: WeeklyAttendanceInvoiceType.STAFFING,
@@ -173,7 +173,7 @@ export async function createWeeklyAttendanceInvoice(
           status: WeeklyAttendanceInvoiceStatus.DRAFT,
           billingWeekStart: batch.weekStartDate,
           billingWeekEnd: batch.weekEndDate,
-          directHours: group.type === WeeklyAttendanceInvoiceType.PAYROLL ? totalHours : 0,
+          directHours: group.type === WeeklyAttendanceInvoiceType.DIRECT ? totalHours : 0,
           staffingHours: group.type === WeeklyAttendanceInvoiceType.STAFFING ? totalHours : 0,
           regularHours: sum(group.lines.map((line) => Number(line.regularHours))),
           overtimeHours: sum(group.lines.map((line) => Number(line.overtimeHours))),
@@ -201,7 +201,12 @@ export async function markWeeklyAttendanceInvoiceSent(id: string, user: CurrentU
   }
   const updated = await prisma.weeklyAttendanceInvoice.update({
     where: { id },
-    data: { status: WeeklyAttendanceInvoiceStatus.SENT, sentAt: new Date(), issuedAt: new Date() },
+    data: {
+      status: WeeklyAttendanceInvoiceStatus.SENT,
+      sentAt: new Date(),
+      issuedAt: new Date(),
+      dueAt: addDays(new Date(), 30),
+    },
   })
   await invoiceAudit("MARK_WEEKLY_ATTENDANCE_INVOICE_SENT", updated)
   return updated
@@ -245,7 +250,12 @@ export async function markWeeklyAttendanceInvoicePaid(id: string, user: CurrentU
   const remaining = await prisma.weeklyAttendanceInvoice.count({
     where: {
       batchId: updated.batchId,
-      status: { not: WeeklyAttendanceInvoiceStatus.PAID },
+      status: {
+        notIn: [
+          WeeklyAttendanceInvoiceStatus.PAID,
+          WeeklyAttendanceInvoiceStatus.VOID,
+        ],
+      },
     },
   })
   if (remaining === 0) {
@@ -284,6 +294,10 @@ function assertPropertyScope(user: CurrentUser, propertyId: string) {
 
 function sum(values: number[]) {
   return Math.round(values.reduce((total, value) => total + value, 0) * 100) / 100
+}
+
+function addDays(value: Date, days: number) {
+  return new Date(value.getTime() + days * 24 * 60 * 60 * 1000)
 }
 
 function invoiceNumber(

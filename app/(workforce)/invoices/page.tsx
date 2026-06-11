@@ -1,9 +1,15 @@
 import type { Metadata } from "next"
-import { ResourcePage } from "@/components/shared/resource-page"
-import { pageConfig } from "@/lib/page-config"
+
+import { InvoiceManagement } from "@/components/invoices/invoice-management"
+import { PermissionGuard } from "@/components/rbac/permission-guard"
 import { Permission } from "@/src/lib/rbac/permissions"
 
 export const metadata: Metadata = { title: "Invoices" }
+
 export default function Page() {
-  return <ResourcePage title={pageConfig.invoices} requiredPermission={Permission.VIEW_INVOICES} />
+  return (
+    <PermissionGuard permission={Permission.VIEW_INVOICES}>
+      <InvoiceManagement />
+    </PermissionGuard>
+  )
 }
