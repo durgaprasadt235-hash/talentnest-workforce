@@ -1,3 +1,5 @@
+import { ClerkProvider } from "@clerk/nextjs";
+import { shadcn } from "@clerk/ui/themes";
 import type { Metadata } from "next";
 
 import "./globals.css";
@@ -18,7 +20,7 @@ export default function RootLayout({
   return (
     <html lang="en" className="h-full antialiased">
       <body className="min-h-full">
-        {children}
+        <ClerkProvider appearance={{ theme: shadcn }}>{children}</ClerkProvider>
       </body>
     </html>
   );
