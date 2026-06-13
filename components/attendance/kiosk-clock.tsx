@@ -41,12 +41,18 @@ function getBrowserFingerprint() {
     localStorage.setItem(INSTALLATION_ID_KEY, installationId)
   }
 
+  const navigatorWithMemory = navigator as Navigator & { deviceMemory?: number }
+
   return {
     installationId,
     userAgent: navigator.userAgent,
     platform: navigator.platform,
     language: navigator.language,
-    screenSize: `${window.screen.width}x${window.screen.height}`,
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    hardwareConcurrency: navigator.hardwareConcurrency,
+    deviceMemory: navigatorWithMemory.deviceMemory,
+    // Viewport and screen size are intentionally excluded because tablet
+    // orientation changes width and height and would force device re-approval.
   }
 }
 

@@ -255,7 +255,7 @@ export function DeviceManagement() {
 
 function formatFingerprint(fingerprint: Record<string, unknown> | null) {
   if (!fingerprint) return "Unavailable"
-  return [fingerprint.platform, fingerprint.language, fingerprint.screenSize]
+  return [fingerprint.platform, fingerprint.language, fingerprint.timezone]
     .filter((value) => typeof value === "string")
     .join(" / ")
 }
