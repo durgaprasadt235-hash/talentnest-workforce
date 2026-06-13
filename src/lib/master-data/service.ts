@@ -19,7 +19,7 @@ const organizationSelect = {
     take: 1,
   },
   invitations: {
-    select: { id: true, email: true, status: true, token: true, invitedAt: true, expiresAt: true },
+    select: { id: true, email: true, status: true, invitedAt: true, expiresAt: true },
     orderBy: { invitedAt: "desc" },
     take: 1,
   },

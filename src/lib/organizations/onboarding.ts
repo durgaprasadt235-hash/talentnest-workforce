@@ -9,6 +9,7 @@ import {
 } from "@prisma/client"
 
 import { createAuditLog } from "@/src/lib/audit"
+import { sendOrganizationInvitationEmail } from "@/src/lib/email/organization-invitations"
 import type { OrganizationFeatureOverrideInput, OrganizationOnboardingInput, OnboardingSubscriptionOption } from "@/src/lib/organizations/validation"
 import { prisma } from "@/src/lib/prisma"
 import type { CurrentUser } from "@/src/lib/rbac/current-user"
@@ -133,13 +134,23 @@ export async function onboardOrganization(input: OrganizationOnboardingInput, ac
     },
   })
 
-  // TODO: Send this invitation through the configured email provider.
+  const emailDelivery = await sendOrganizationInvitationEmail({
+    email: result.invitation.email,
+    firstName: result.invitation.firstName,
+    organizationName: result.organization.name,
+    token: result.invitation.token,
+  }).catch((error: unknown) => ({
+    sent: false,
+    message: error instanceof Error ? error.message : "Invitation email could not be sent.",
+  }))
+
   return {
     organizationId: result.organization.id,
     organizationName: result.organization.name,
     ownerEmail: result.owner.email,
     invitationStatus: result.invitation.status,
-    inviteLink: `/accept-invitation?token=${result.invitation.token}`,
+    emailSent: emailDelivery.sent,
+    emailMessage: emailDelivery.message,
     expiresAt: result.invitation.expiresAt,
   }
 }
@@ -174,6 +185,112 @@ export async function getInvitationByToken(token: string) {
   }
 
   return { ...invitation, status }
+}
+
+export async function acceptInvitationByToken(token: string, actor: CurrentUser) {
+  if (!actor.email || !actor.organizationId) {
+    throw new AuthorizationError("This Clerk account is not assigned to the invitation.")
+  }
+
+  const invitation = await prisma.organizationInvitation.findUnique({
+    where: { token },
+    include: { organization: { select: { id: true, name: true } } },
+  })
+  if (!invitation) throw new Error("Invitation not found.")
+  if (invitation.expiresAt.getTime() < Date.now()) {
+    if (invitation.status === OrganizationInvitationStatus.PENDING) {
+      await prisma.organizationInvitation.update({
+        where: { id: invitation.id },
+        data: { status: OrganizationInvitationStatus.EXPIRED },
+      })
+    }
+    throw new AuthorizationError("This invitation has expired.")
+  }
+  if (
+    invitation.organizationId !== actor.organizationId ||
+    invitation.email.toLowerCase() !== actor.email.toLowerCase()
+  ) {
+    throw new AuthorizationError("This Clerk account does not match the invitation.")
+  }
+  if (
+    invitation.status !== OrganizationInvitationStatus.PENDING &&
+    invitation.status !== OrganizationInvitationStatus.ACCEPTED
+  ) {
+    throw new AuthorizationError("This invitation can no longer be accepted.")
+  }
+
+  const accepted =
+    invitation.status === OrganizationInvitationStatus.ACCEPTED
+      ? invitation
+      : await prisma.organizationInvitation.update({
+          where: { id: invitation.id },
+          data: {
+            status: OrganizationInvitationStatus.ACCEPTED,
+            acceptedAt: new Date(),
+          },
+          include: { organization: { select: { id: true, name: true } } },
+        })
+
+  return {
+    status: accepted.status,
+    organization: accepted.organization,
+  }
+}
+
+export async function resendOrganizationInvitation(
+  organizationId: string,
+  invitationId: string,
+  actor: CurrentUser,
+) {
+  assertPlatformActor(actor)
+  const invitation = await prisma.organizationInvitation.findFirst({
+    where: { id: invitationId, organizationId },
+    include: { organization: { select: { name: true } } },
+  })
+  if (!invitation) throw new Error("Invitation not found.")
+  if (invitation.status === OrganizationInvitationStatus.ACCEPTED) {
+    throw new Error("Accepted invitations cannot be resent.")
+  }
+  if (invitation.status === OrganizationInvitationStatus.CANCELLED) {
+    throw new Error("Cancelled invitations cannot be resent.")
+  }
+
+  const token = randomBytes(32).toString("hex")
+  const updated = await prisma.organizationInvitation.update({
+    where: { id: invitation.id },
+    data: {
+      token,
+      status: OrganizationInvitationStatus.PENDING,
+      invitedAt: new Date(),
+      expiresAt: addDays(new Date(), 7),
+      acceptedAt: null,
+    },
+  })
+  const emailDelivery = await sendOrganizationInvitationEmail({
+    email: updated.email,
+    firstName: updated.firstName,
+    organizationName: invitation.organization.name,
+    token: updated.token,
+  }).catch((error: unknown) => ({
+    sent: false,
+    message: error instanceof Error ? error.message : "Invitation email could not be sent.",
+  }))
+
+  await createAuditLog({
+    action: "RESEND_ORGANIZATION_INVITATION",
+    entityType: "OrganizationInvitation",
+    entityId: updated.id,
+    organizationId,
+    userId: actor.id,
+    metadata: { emailSent: emailDelivery.sent },
+  })
+
+  return {
+    invitationStatus: updated.status,
+    expiresAt: updated.expiresAt,
+    emailSent: emailDelivery.sent,
+    emailMessage: emailDelivery.message,
+  }
 }
 
 export async function updateOrganizationFeatureOverride(

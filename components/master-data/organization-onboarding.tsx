@@ -1,7 +1,7 @@
 "use client"
 
 import { useMemo, useState, type FormEvent, type ReactNode } from "react"
-import { Check, ChevronLeft, ChevronRight, Copy, Plus } from "lucide-react"
+import { Check, ChevronLeft, ChevronRight, Plus } from "lucide-react"
 
 import { useCurrentUser } from "@/components/rbac/current-user-provider"
 import { Button } from "@/components/ui/button"
@@ -52,7 +52,13 @@ export function OrganizationOnboarding() {
   const [form, setForm] = useState(initialForm)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState("")
-  const [result, setResult] = useState<{ organizationName: string; ownerEmail: string; inviteLink: string } | null>(null)
+  const [result, setResult] = useState<{
+    organizationName: string
+    ownerEmail: string
+    invitationStatus: string
+    emailSent: boolean
+    emailMessage: string
+  } | null>(null)
 
   if (!isPlatform) return null
 
@@ -102,8 +108,6 @@ export function OrganizationOnboarding() {
     }
   }
 
-  const inviteUrl = result ? `${window.location.origin}${result.inviteLink}` : ""
-
   return (
     <>
       <Button onClick={start}><Plus /> Create Client Organization</Button>
@@ -113,14 +117,13 @@ export function OrganizationOnboarding() {
             <div className="space-y-6 p-4">
               <SheetHeader className="px-0">
                 <SheetTitle>Organization setup created</SheetTitle>
-                <SheetDescription>{result.organizationName} is ready for setup. No email was sent.</SheetDescription>
+                <SheetDescription>{result.organizationName} is ready for setup.</SheetDescription>
               </SheetHeader>
               <div className="rounded-xl border bg-muted/30 p-4">
                 <p className="text-sm font-medium">Organization Owner</p>
                 <p className="mt-1 text-sm text-muted-foreground">{result.ownerEmail}</p>
-                <p className="mt-4 text-sm font-medium">Invitation link</p>
-                <p className="mt-1 break-all rounded-lg border bg-background p-3 font-mono text-xs">{inviteUrl}</p>
-                <Button className="mt-3" variant="outline" onClick={() => void navigator.clipboard.writeText(inviteUrl)}><Copy /> Copy invite link</Button>
+                <p className="mt-4 text-sm font-medium">{result.emailSent ? "Invitation Sent" : "Invitation Created"}</p>
+                <p className="mt-1 text-sm text-muted-foreground">{result.emailMessage}</p>
               </div>
               <Button onClick={() => setOpen(false)}>Done</Button>
             </div>
@@ -173,7 +176,7 @@ function OwnerStep({ form, update }: { form: typeof initialForm.owner; update: (
     <Field label="First name"><Input required value={form.firstName} onChange={(event) => update("firstName", event.target.value)} /></Field>
     <Field label="Last name"><Input required value={form.lastName} onChange={(event) => update("lastName", event.target.value)} /></Field>
     <div className="md:col-span-2"><Field label="Email"><Input required type="email" value={form.email} onChange={(event) => update("email", event.target.value)} /></Field></div>
-    <p className="text-sm text-muted-foreground md:col-span-2">An unlinked Organization Owner user and invitation token will be created. Email delivery will be added when a provider is configured.</p>
+    <p className="text-sm text-muted-foreground md:col-span-2">An Organization Owner user will be created and an invitation email will be sent when Resend is configured.</p>
   </div>
 }
 

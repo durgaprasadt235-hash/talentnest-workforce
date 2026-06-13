@@ -50,7 +50,7 @@ type Item = {
   } | null
   featureOverride?: Record<string, boolean | string | null> | null
   users?: Array<{ id: string; firstName: string; lastName: string; email: string; clerkUserId: string | null }>
-  invitations?: Array<{ id: string; email: string; status: string; token: string; invitedAt: string; expiresAt: string }>
+  invitations?: Array<{ id: string; email: string; status: string; invitedAt: string; expiresAt: string }>
   _count?: { legalEntities: number; properties: number }
 }
 type Option = { id: string; name: string; organizationId?: string }
@@ -349,6 +349,8 @@ function OrganizationDetails({ item }: { item: Item }) {
     typeof item.featureOverride?.reason === "string" ? item.featureOverride.reason : "",
   )
   const [featureMessage, setFeatureMessage] = useState("")
+  const [invitationMessage, setInvitationMessage] = useState("")
+  const [resendingInvitation, setResendingInvitation] = useState(false)
 
   async function saveFeatures() {
     setFeatureMessage("")
@@ -361,6 +363,26 @@ function OrganizationDetails({ item }: { item: Item }) {
     if (!response.ok) return setFeatureMessage(body.error)
     setFeatureMessage("Feature access updated.")
     window.dispatchEvent(new Event("talentnest:organizations-changed"))
+  }
+
+  async function resendInvitation() {
+    if (!invitation) return
+    setResendingInvitation(true)
+    setInvitationMessage("")
+    try {
+      const response = await fetch(`/api/organizations/${item.id}/invitations/${invitation.id}/resend`, {
+        method: "POST",
+        headers: mockRoleHeaders(currentUser.role),
+      })
+      const body = await response.json()
+      if (!response.ok) throw new Error(body.error)
+      setInvitationMessage(body.emailMessage)
+      window.dispatchEvent(new Event("talentnest:organizations-changed"))
+    } catch (caught) {
+      setInvitationMessage(caught instanceof Error ? caught.message : "Unable to resend invitation.")
+    } finally {
+      setResendingInvitation(false)
+    }
   }
 
   return <div className="space-y-6 p-4">
@@ -376,7 +398,20 @@ function OrganizationDetails({ item }: { item: Item }) {
       <Button type="button" onClick={() => void saveFeatures()}>Save feature access</Button>
     </section>}
     <DetailBlock title="Organization owner" lines={owner ? [`${owner.firstName} ${owner.lastName}`, owner.email, owner.clerkUserId ? "Clerk linked" : "Clerk unlinked"] : ["No organization owner"]} />
-    <DetailBlock title="Latest invitation" lines={invitation ? [`${invitation.email} · ${invitation.status}`, `/accept-invitation?token=${invitation.token}`, `Expires: ${new Date(invitation.expiresAt).toLocaleString()}`] : ["No invitation"]} />
+    <section className="space-y-3 rounded-xl border p-4">
+      <h3 className="font-medium">Latest invitation</h3>
+      {invitation ? <>
+        <div className="space-y-1 text-sm text-muted-foreground">
+          <p>{invitation.email}</p>
+          <p>{invitation.status === "PENDING" ? "Invitation Sent" : invitation.status}</p>
+          <p>Expires: {new Date(invitation.expiresAt).toLocaleString()}</p>
+        </div>
+        {canEditFeatures && invitation.status !== "ACCEPTED" && invitation.status !== "CANCELLED" && <Button type="button" variant="outline" disabled={resendingInvitation} onClick={() => void resendInvitation()}>
+          <RotateCcw /> {resendingInvitation ? "Sending..." : "Resend invitation"}
+        </Button>}
+        {invitationMessage && <p className="text-sm text-muted-foreground">{invitationMessage}</p>}
+      </> : <p className="text-sm text-muted-foreground">No invitation</p>}
+    </section>
     <DetailBlock title="Setup" lines={[`${item._count?.legalEntities ?? 0} legal entities`, `${item._count?.properties ?? 0} properties`]} />
     <DetailBlock title="Contact and billing" lines={[item.contactName ?? "", item.contactEmail ?? "", item.contactPhone ?? "", [item.billingAddress, item.billingCity, item.billingState, item.billingZip].filter(Boolean).join(", ")]} />
   </div>
