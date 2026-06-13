@@ -7,7 +7,7 @@ type Context = { params: Promise<{ id: string }> }
 
 export async function POST(request: Request, context: Context) {
   try {
-    const user = requireServerPermission(request, Permission.MANAGE_CORPORATE_WEEKLY_ATTENDANCE)
+    const user = await requireServerPermission(request, Permission.MANAGE_CORPORATE_WEEKLY_ATTENDANCE)
     const { id } = await context.params
     return Response.json({ batch: await sendManagerReminder(id, user) })
   } catch (error) {

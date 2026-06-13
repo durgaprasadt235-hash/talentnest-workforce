@@ -1,6 +1,6 @@
 import type { z } from "zod"
 
-import { AuthorizationError } from "@/src/lib/rbac/server-guard"
+import { AuthorizationError } from "@/src/lib/rbac/errors"
 
 export class RequestValidationError extends Error {
   constructor(public readonly issues: z.core.$ZodIssue[]) {

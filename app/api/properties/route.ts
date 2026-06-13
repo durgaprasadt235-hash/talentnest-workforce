@@ -6,7 +6,7 @@ import { requireServerPermission } from "@/src/lib/rbac/server-guard"
 
 export async function GET(request: Request) {
   try {
-    requireServerPermission(request, Permission.VIEW_PROPERTIES)
+    await requireServerPermission(request, Permission.VIEW_PROPERTIES)
     return Response.json(await listProperties())
   } catch (error) {
     return errorResponse(error, 500)
@@ -15,7 +15,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    requireServerPermission(request, Permission.MANAGE_PROPERTIES)
+    await requireServerPermission(request, Permission.MANAGE_PROPERTIES)
     const input = await parseJsonBody(request, propertySchema)
     return Response.json({ property: await createProperty(input) }, { status: 201 })
   } catch (error) {

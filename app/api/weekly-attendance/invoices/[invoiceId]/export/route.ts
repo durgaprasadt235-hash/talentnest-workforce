@@ -8,7 +8,7 @@ export async function GET(
   context: RouteContext<"/api/weekly-attendance/invoices/[invoiceId]/export">,
 ) {
   try {
-    const user = requireServerPermission(request, Permission.VIEW_INVOICES)
+    const user = await requireServerPermission(request, Permission.VIEW_INVOICES)
     const { invoiceId } = await context.params
     const invoice = await getInvoiceDetail(invoiceId, user)
 

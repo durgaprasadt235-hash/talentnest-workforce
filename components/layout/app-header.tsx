@@ -45,22 +45,24 @@ export function AppHeader() {
         TalentNest Workforce
       </p>
       <div className="ml-auto flex items-center gap-2">
-        <label className="flex items-center gap-2">
-          <ShieldCheck className="hidden size-4 text-muted-foreground sm:block" />
-          <span className="sr-only">Current mock role</span>
-          <select
-            aria-label="Current mock role"
-            value={currentUser.role}
-            onChange={(event) => setCurrentRole(event.target.value as Role)}
-            className="h-9 max-w-56 rounded-lg border bg-background px-3 text-sm font-medium text-foreground outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-          >
-            {ROLES.map((role) => (
-              <option key={role} value={role}>
-                {ROLE_LABELS[role]}
-              </option>
-            ))}
-          </select>
-        </label>
+        {process.env.NODE_ENV !== "production" && (
+          <label className="flex items-center gap-2">
+            <ShieldCheck className="hidden size-4 text-muted-foreground sm:block" />
+            <span className="sr-only">Current mock role</span>
+            <select
+              aria-label="Current mock role"
+              value={currentUser.role}
+              onChange={(event) => setCurrentRole(event.target.value as Role)}
+              className="h-9 max-w-56 rounded-lg border bg-background px-3 text-sm font-medium text-foreground outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+            >
+              {ROLES.map((role) => (
+                <option key={role} value={role}>
+                  {ROLE_LABELS[role]}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         <Show when="signed-out">
           <SignInButton mode="modal">
             <Button variant="outline" size="sm">

@@ -13,6 +13,8 @@ export function mockRoleHeaders(
     staffingCompanyId?: string
   },
 ) {
+  if (process.env.NODE_ENV === "production") return {}
+
   const headers: Record<string, string> = { [MOCK_ROLE_HEADER]: role }
   if (context?.organizationId) {
     headers[MOCK_ORGANIZATION_HEADER] = context.organizationId

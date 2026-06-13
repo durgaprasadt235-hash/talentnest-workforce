@@ -7,7 +7,7 @@ import { listWeeklyAttendanceByRole } from "@/src/lib/weekly-attendance/role-ser
 
 export async function GET(request: Request) {
   try {
-    const user = requireServerPermission(request, Permission.VIEW_WEEKLY_ATTENDANCE)
+    const user = await requireServerPermission(request, Permission.VIEW_WEEKLY_ATTENDANCE)
     const url = new URL(request.url)
     const requestedStatus = url.searchParams.get("status")
     const status = Object.values(WeeklyAttendanceBatchStatus).find(

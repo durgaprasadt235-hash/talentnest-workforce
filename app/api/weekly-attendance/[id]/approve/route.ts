@@ -10,7 +10,7 @@ export async function POST(
   context: RouteContext<"/api/weekly-attendance/[id]/approve">,
 ) {
   try {
-    const user = requireServerPermission(request, Permission.APPROVE_WEEKLY_ATTENDANCE)
+    const user = await requireServerPermission(request, Permission.APPROVE_WEEKLY_ATTENDANCE)
     const { id } = await context.params
     await assertPropertyManagerBatchScope(id, user)
     const input = await parseJsonBody(request, approveWeeklyAttendanceSchema)

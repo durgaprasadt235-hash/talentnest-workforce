@@ -6,7 +6,7 @@ import { requireServerPermission } from "@/src/lib/rbac/server-guard"
 
 export async function POST(request: Request) {
   try {
-    requireServerPermission(request, Permission.MANAGE_PROPERTIES)
+    await requireServerPermission(request, Permission.MANAGE_PROPERTIES)
     const body = await request.json()
     const input = approveDeviceRequestSchema.parse(body)
 

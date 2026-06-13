@@ -7,7 +7,7 @@ import { EmployeeStatus } from "@prisma/client"
 
 export async function GET(request: Request) {
   try {
-    requireServerPermission(request, Permission.VIEW_EMPLOYEES)
+    await requireServerPermission(request, Permission.VIEW_EMPLOYEES)
     const requestedStatus = new URL(request.url).searchParams.get("status")
     const status =
       requestedStatus === "ALL"
@@ -22,7 +22,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    requireServerPermission(request, Permission.MANAGE_EMPLOYEES)
+    await requireServerPermission(request, Permission.MANAGE_EMPLOYEES)
     const input = await parseJsonBody(request, createEmployeeSchema)
     return Response.json({ employee: await createEmployee(input) }, { status: 201 })
   } catch (error) {

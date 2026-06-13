@@ -9,7 +9,7 @@ export async function POST(
   context: RouteContext<"/api/attendance/devices/[id]/approve">,
 ) {
   try {
-    requireServerPermission(request, Permission.MANAGE_PROPERTIES)
+    await requireServerPermission(request, Permission.MANAGE_PROPERTIES)
     const { id } = await context.params
     const input = await parseJsonBody(request, approveDeviceRequestSchema)
     return Response.json({ device: await approveDevice(id, input) })

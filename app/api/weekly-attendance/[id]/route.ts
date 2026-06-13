@@ -8,7 +8,7 @@ export async function GET(
   context: RouteContext<"/api/weekly-attendance/[id]">,
 ) {
   try {
-    const user = requireServerPermission(request, Permission.VIEW_WEEKLY_ATTENDANCE)
+    const user = await requireServerPermission(request, Permission.VIEW_WEEKLY_ATTENDANCE)
     const { id } = await context.params
     return Response.json({
       batch: await getWeeklyAttendanceBatchByRole(id, user),

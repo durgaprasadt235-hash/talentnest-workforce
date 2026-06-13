@@ -6,7 +6,7 @@ import { requireServerPermission } from "@/src/lib/rbac/server-guard"
 type Context = { params: Promise<{ id: string }> }
 export async function POST(request: Request, { params }: Context) {
   try {
-    requireServerPermission(request, Permission.MANAGE_ORGANIZATION)
+    await requireServerPermission(request, Permission.MANAGE_ORGANIZATION)
     return Response.json({ organization: await setOrganizationStatus((await params).id, RecordStatus.ACTIVE) })
   } catch (error) { return errorResponse(error) }
 }

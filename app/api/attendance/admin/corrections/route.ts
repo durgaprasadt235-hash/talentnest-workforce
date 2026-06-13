@@ -9,7 +9,7 @@ import { requireServerPermission } from "@/src/lib/rbac/server-guard"
 
 export async function POST(request: Request) {
   try {
-    requireServerPermission(request, Permission.APPROVE_ATTENDANCE)
+    await requireServerPermission(request, Permission.APPROVE_ATTENDANCE)
     const input = await parseJsonBody(request, correctionActionRequestSchema)
 
     return Response.json({

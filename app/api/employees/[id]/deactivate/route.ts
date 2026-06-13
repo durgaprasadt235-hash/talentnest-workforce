@@ -9,7 +9,7 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    requireServerPermission(request, Permission.MANAGE_EMPLOYEES)
+    await requireServerPermission(request, Permission.MANAGE_EMPLOYEES)
     const { id } = await params
     const { status } = await parseJsonBody(request, employeeStatusSchema)
     return Response.json({

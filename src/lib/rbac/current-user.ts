@@ -1,6 +1,10 @@
 import { Role } from "@/src/lib/rbac/roles"
 
 export type CurrentUser = {
+  id?: string
+  email?: string
+  firstName?: string
+  lastName?: string
   role: Role
   organizationId?: string
   propertyIds?: string[]

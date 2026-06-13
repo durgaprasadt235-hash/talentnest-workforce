@@ -9,7 +9,7 @@ export async function POST(
   context: RouteContext<"/api/weekly-attendance/[id]/lock">,
 ) {
   try {
-    const user = requireServerPermission(request, Permission.LOCK_WEEKLY_ATTENDANCE)
+    const user = await requireServerPermission(request, Permission.LOCK_WEEKLY_ATTENDANCE)
     const { id } = await context.params
     await assertPropertyManagerBatchScope(id, user)
     return Response.json({ batch: await lockWeeklyAttendance(id) })

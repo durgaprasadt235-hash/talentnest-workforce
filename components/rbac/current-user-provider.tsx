@@ -3,6 +3,7 @@
 import {
   createContext,
   useContext,
+  useEffect,
   useMemo,
   useState,
   type ReactNode,
@@ -10,10 +11,9 @@ import {
 
 import {
   createMockCurrentUser,
-  DEFAULT_CURRENT_USER,
   type CurrentUser,
 } from "@/src/lib/rbac/current-user"
-import type { Role } from "@/src/lib/rbac/roles"
+import { Role } from "@/src/lib/rbac/roles"
 
 type CurrentUserContextValue = {
   currentUser: CurrentUser
@@ -23,10 +23,56 @@ type CurrentUserContextValue = {
 const CurrentUserContext = createContext<CurrentUserContextValue | null>(null)
 
 export function CurrentUserProvider({ children }: { children: ReactNode }) {
-  const [role, setCurrentRole] = useState<Role>(DEFAULT_CURRENT_USER.role)
+  const [currentUser, setCurrentUser] = useState<CurrentUser>(() =>
+    createMockCurrentUser(Role.READ_ONLY_AUDITOR),
+  )
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadCurrentUser() {
+      const response = await fetch("/api/auth/me")
+      if (!response.ok) return
+
+      const user = (await response.json()) as CurrentUser & {
+        organizationId: string | null
+        staffingCompanyId: string | null
+      }
+      if (!cancelled) {
+        setCurrentUser({
+          ...user,
+          organizationId: user.organizationId ?? undefined,
+          staffingCompanyId: user.staffingCompanyId ?? undefined,
+        })
+      }
+    }
+
+    loadCurrentUser().catch(() => undefined)
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  function setCurrentRole(role: Role) {
+    if (process.env.NODE_ENV !== "production") {
+      setCurrentUser((user) =>
+        createMockCurrentUser(role, {
+          id: user.id,
+          email: user.email,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          organizationId: user.organizationId,
+          propertyIds: user.propertyIds,
+          staffingCompanyId: user.staffingCompanyId,
+        }),
+      )
+    }
+  }
+
   const value = useMemo(
-    () => ({ currentUser: createMockCurrentUser(role), setCurrentRole }),
-    [role],
+    () => ({ currentUser, setCurrentRole }),
+    [currentUser],
   )
 
   return (

@@ -7,7 +7,7 @@ type Context = { params: Promise<{ invoiceId: string }> }
 
 export async function POST(request: Request, context: Context) {
   try {
-    const user = requireServerPermission(request, Permission.MANAGE_WEEKLY_ATTENDANCE_PAYABLES)
+    const user = await requireServerPermission(request, Permission.MANAGE_WEEKLY_ATTENDANCE_PAYABLES)
     const { invoiceId } = await context.params
     return Response.json({ invoice: await markWeeklyAttendanceInvoicePaid(invoiceId, user) })
   } catch (error) {

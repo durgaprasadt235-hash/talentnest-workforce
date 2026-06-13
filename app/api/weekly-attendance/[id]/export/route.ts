@@ -8,7 +8,7 @@ export async function GET(
   context: RouteContext<"/api/weekly-attendance/[id]/export">,
 ) {
   try {
-    const user = requireServerPermission(request, Permission.VIEW_WEEKLY_ATTENDANCE)
+    const user = await requireServerPermission(request, Permission.VIEW_WEEKLY_ATTENDANCE)
     const { id } = await context.params
     const url = new URL(request.url)
     const reportType = url.searchParams.get("type") || "consolidated"

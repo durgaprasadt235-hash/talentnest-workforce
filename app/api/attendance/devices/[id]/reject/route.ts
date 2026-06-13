@@ -8,7 +8,7 @@ export async function POST(
   context: RouteContext<"/api/attendance/devices/[id]/reject">,
 ) {
   try {
-    requireServerPermission(_request, Permission.MANAGE_PROPERTIES)
+    await requireServerPermission(_request, Permission.MANAGE_PROPERTIES)
     const { id } = await context.params
     return Response.json({ device: await rejectDevice(id) })
   } catch (error) {

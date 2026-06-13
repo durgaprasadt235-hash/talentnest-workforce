@@ -7,7 +7,7 @@ import { assertWeeklyAttendanceGenerationScope } from "@/src/lib/weekly-attendan
 
 export async function POST(request: Request) {
   try {
-    const user = requireServerPermission(request, Permission.GENERATE_WEEKLY_ATTENDANCE)
+    const user = await requireServerPermission(request, Permission.GENERATE_WEEKLY_ATTENDANCE)
     const input = await parseJsonBody(request, generateWeeklyAttendanceSchema)
     assertWeeklyAttendanceGenerationScope(user, input)
     return Response.json({ batch: await generateWeeklyAttendance(input) })

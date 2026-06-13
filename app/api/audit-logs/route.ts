@@ -6,7 +6,7 @@ import { errorResponse } from "@/src/lib/http"
 
 export async function GET(request: NextRequest) {
   try {
-    requireServerPermission(request as unknown as Request, Permission.VIEW_AUDIT_LOGS)
+    await requireServerPermission(request as unknown as Request, Permission.VIEW_AUDIT_LOGS)
 
     const url = new URL(request.url)
     const q = url.searchParams

@@ -5,7 +5,7 @@ import { requireServerPermission } from "@/src/lib/rbac/server-guard"
 
 export async function GET(request: Request) {
   try {
-    requireServerPermission(request, Permission.MANAGE_PROPERTIES)
+    await requireServerPermission(request, Permission.MANAGE_PROPERTIES)
     const [devices, options] = await Promise.all([
       listDevices(),
       listDeviceOptions(),

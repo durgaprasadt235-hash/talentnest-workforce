@@ -10,7 +10,7 @@ import { requireServerPermission } from "@/src/lib/rbac/server-guard"
 
 export async function GET(request: Request) {
   try {
-    const user = requireServerPermission(request, Permission.VIEW_INVOICES)
+    const user = await requireServerPermission(request, Permission.VIEW_INVOICES)
     const url = new URL(request.url)
     return Response.json(await listInvoices(user, {
       organizationId: value(url, "organizationId"),

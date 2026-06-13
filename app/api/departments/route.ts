@@ -6,7 +6,7 @@ import { requireServerPermission } from "@/src/lib/rbac/server-guard"
 
 export async function GET(request: Request) {
   try {
-    requireServerPermission(request, Permission.VIEW_DEPARTMENTS)
+    await requireServerPermission(request, Permission.VIEW_DEPARTMENTS)
     return Response.json(await listDepartments())
   } catch (error) {
     return errorResponse(error, 500)
@@ -15,7 +15,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    requireServerPermission(request, Permission.MANAGE_DEPARTMENTS)
+    await requireServerPermission(request, Permission.MANAGE_DEPARTMENTS)
     const input = await parseJsonBody(request, departmentSchema)
     return Response.json({ department: await createDepartment(input) }, { status: 201 })
   } catch (error) {

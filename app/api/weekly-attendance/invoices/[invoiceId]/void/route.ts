@@ -8,7 +8,7 @@ export async function POST(
   context: RouteContext<"/api/weekly-attendance/invoices/[invoiceId]/void">,
 ) {
   try {
-    const user = requireServerPermission(request, Permission.MANAGE_WEEKLY_ATTENDANCE_PAYABLES)
+    const user = await requireServerPermission(request, Permission.MANAGE_WEEKLY_ATTENDANCE_PAYABLES)
     const { invoiceId } = await context.params
     return Response.json({ invoice: await voidInvoice(invoiceId, user) })
   } catch (error) {
