@@ -13,6 +13,7 @@ import { Table, TableCell, TableHead } from "@/components/ui/table"
 import { hasPermission } from "@/src/lib/rbac/guards"
 import { mockRoleHeaders } from "@/src/lib/rbac/mock-auth"
 import { Permission } from "@/src/lib/rbac/permissions"
+import { Role } from "@/src/lib/rbac/roles"
 
 type Kind = "organization" | "property" | "department"
 type Item = {
@@ -331,6 +332,8 @@ function detail(kind: Kind, item: Item) {
 }
 
 function OrganizationDetails({ item }: { item: Item }) {
+  const { currentUser } = useCurrentUser()
+  const canEditFeatures = currentUser.role === Role.PLATFORM_OWNER || currentUser.role === Role.PLATFORM_ADMIN
   const featureNames = [
     ["canUseScheduling", "Scheduling"], ["canUseAttendance", "Attendance"], ["canUseTimesheets", "Timesheets"],
     ["canUseInvoices", "Invoices"], ["canUsePayments", "Payments"], ["canUseReports", "Reports"],
@@ -339,12 +342,39 @@ function OrganizationDetails({ item }: { item: Item }) {
   const enabled = featureNames.filter(([key]) => item.featureOverride?.[key] === true).map(([, label]) => label)
   const owner = item.users?.[0]
   const invitation = item.invitations?.[0]
+  const [features, setFeatures] = useState(() => Object.fromEntries(
+    featureNames.map(([key]) => [key, item.featureOverride?.[key] === true]),
+  ) as Record<(typeof featureNames)[number][0], boolean>)
+  const [reason, setReason] = useState(
+    typeof item.featureOverride?.reason === "string" ? item.featureOverride.reason : "",
+  )
+  const [featureMessage, setFeatureMessage] = useState("")
+
+  async function saveFeatures() {
+    setFeatureMessage("")
+    const response = await fetch(`/api/organizations/${item.id}/features`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json", ...mockRoleHeaders(currentUser.role) },
+      body: JSON.stringify({ ...features, reason: reason || null }),
+    })
+    const body = await response.json()
+    if (!response.ok) return setFeatureMessage(body.error)
+    setFeatureMessage("Feature access updated.")
+    window.dispatchEvent(new Event("talentnest:organizations-changed"))
+  }
 
   return <div className="space-y-6 p-4">
     <SheetHeader className="px-0"><SheetTitle>{item.name}</SheetTitle><SheetDescription>{item.legalBusinessName ?? item.slug}</SheetDescription></SheetHeader>
     <div className="flex flex-wrap gap-2"><Badge>{item.organizationStatus ?? "ACTIVE"}</Badge><Badge className="bg-transparent text-foreground">{item.status}</Badge></div>
     <DetailBlock title="Subscription" lines={item.subscription ? [`${item.subscription.planName} · ${item.subscription.billingCycle}`, `Status: ${item.subscription.status}`, item.subscription.trialEndsAt ? `Trial ends: ${new Date(item.subscription.trialEndsAt).toLocaleDateString()}` : ""] : ["No subscription configured"]} />
     <DetailBlock title="Feature access" lines={[enabled.length ? enabled.join(", ") : "No feature overrides enabled", typeof item.featureOverride?.reason === "string" ? item.featureOverride.reason : ""]} />
+    {canEditFeatures && <section className="space-y-4 rounded-xl border p-4">
+      <div><h3 className="font-medium">Edit feature access</h3><p className="mt-1 text-sm text-muted-foreground">Platform-approved toggles can keep selected modules available even while subscription setup is pending.</p></div>
+      <div className="grid grid-cols-2 gap-3">{featureNames.map(([key, label]) => <label key={key} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={features[key]} onChange={(event) => setFeatures((current) => ({ ...current, [key]: event.target.checked }))} />{label}</label>)}</div>
+      <Field label="Reason"><Input value={reason} onChange={(event) => setReason(event.target.value)} /></Field>
+      {featureMessage && <p className="text-sm text-muted-foreground">{featureMessage}</p>}
+      <Button type="button" onClick={() => void saveFeatures()}>Save feature access</Button>
+    </section>}
     <DetailBlock title="Organization owner" lines={owner ? [`${owner.firstName} ${owner.lastName}`, owner.email, owner.clerkUserId ? "Clerk linked" : "Clerk unlinked"] : ["No organization owner"]} />
     <DetailBlock title="Latest invitation" lines={invitation ? [`${invitation.email} · ${invitation.status}`, `/accept-invitation?token=${invitation.token}`, `Expires: ${new Date(invitation.expiresAt).toLocaleString()}`] : ["No invitation"]} />
     <DetailBlock title="Setup" lines={[`${item._count?.legalEntities ?? 0} legal entities`, `${item._count?.properties ?? 0} properties`]} />

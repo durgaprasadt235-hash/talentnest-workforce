@@ -3,9 +3,10 @@ import type { Metadata } from "next"
 import { AttendanceAdmin } from "@/components/attendance/attendance-admin"
 import { PermissionGuard } from "@/components/rbac/permission-guard"
 import { Permission } from "@/src/lib/rbac/permissions"
+import { FeatureLock, FeatureKey } from "@/components/features/feature-lock"
 
 export const metadata: Metadata = { title: "Attendance Admin" }
 
 export default function Page() {
-  return <PermissionGuard permission={Permission.APPROVE_ATTENDANCE}><AttendanceAdmin /></PermissionGuard>
+  return <PermissionGuard permission={Permission.APPROVE_ATTENDANCE}><FeatureLock feature={FeatureKey.ATTENDANCE}><AttendanceAdmin /></FeatureLock></PermissionGuard>
 }

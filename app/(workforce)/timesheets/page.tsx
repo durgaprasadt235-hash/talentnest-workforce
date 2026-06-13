@@ -2,8 +2,9 @@ import type { Metadata } from "next"
 import { ResourcePage } from "@/components/shared/resource-page"
 import { pageConfig } from "@/lib/page-config"
 import { Permission } from "@/src/lib/rbac/permissions"
+import { FeatureKey } from "@/src/lib/features/feature-keys"
 
 export const metadata: Metadata = { title: "Timesheets" }
 export default function Page() {
-  return <ResourcePage title={pageConfig.timesheets} requiredPermission={Permission.VIEW_TIMESHEETS} />
+  return <ResourcePage title={pageConfig.timesheets} requiredPermission={Permission.VIEW_TIMESHEETS} requiredFeature={FeatureKey.TIMESHEETS} />
 }

@@ -2,6 +2,8 @@ import {
   createMockCurrentUser,
   type CurrentUser,
 } from "@/src/lib/rbac/current-user"
+import { assertOrganizationFeatureAccess } from "@/src/lib/features/organization-feature-access"
+import { featureForPermission } from "@/src/lib/features/permission-feature"
 import { resolveClerkCurrentUser } from "@/src/lib/rbac/clerk-user"
 import { AuthorizationError } from "@/src/lib/rbac/errors"
 import { hasPermission } from "@/src/lib/rbac/guards"
@@ -66,6 +68,9 @@ export async function requireClerkPermission(
     throw new AuthorizationError("You do not have permission for this action.")
   }
 
+  const feature = featureForPermission(permission)
+  if (feature) await assertOrganizationFeatureAccess(user, feature)
+
   return user
 }
 
@@ -78,6 +83,9 @@ async function requirePermission(
   if (!hasPermission(user, permission)) {
     throw new AuthorizationError("You do not have permission for this action.")
   }
+
+  const feature = featureForPermission(permission)
+  if (feature) await assertOrganizationFeatureAccess(user, feature)
 
   return user
 }

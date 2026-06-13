@@ -44,5 +44,18 @@ export const organizationOnboardingSchema = z.object({
   }),
 })
 
+export const organizationFeatureOverrideSchema = z.object({
+  canUseScheduling: z.boolean(),
+  canUseAttendance: z.boolean(),
+  canUseTimesheets: z.boolean(),
+  canUseInvoices: z.boolean(),
+  canUsePayments: z.boolean(),
+  canUseReports: z.boolean(),
+  canUseKiosk: z.boolean(),
+  canUseStaffing: z.boolean(),
+  reason: optionalText,
+})
+
 export type OrganizationOnboardingInput = z.infer<typeof organizationOnboardingSchema>
 export type OnboardingSubscriptionOption = OrganizationOnboardingInput["subscriptionOption"]
+export type OrganizationFeatureOverrideInput = z.infer<typeof organizationFeatureOverrideSchema>

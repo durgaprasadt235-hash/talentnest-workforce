@@ -2,6 +2,7 @@ import type { ReactNode } from "react"
 
 import { AppHeader } from "@/components/layout/app-header"
 import { AppSidebar } from "@/components/layout/app-sidebar"
+import { SubscriptionBanner } from "@/components/features/subscription-banner"
 import { CurrentUserProvider } from "@/components/rbac/current-user-provider"
 
 export function AppShell({ children }: { children: ReactNode }) {
@@ -13,6 +14,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         </aside>
         <div className="lg:pl-64">
           <AppHeader />
+          <SubscriptionBanner />
           <main className="mx-auto max-w-[1600px] px-4 py-8 sm:px-6 lg:px-10 lg:py-10">
             {children}
           </main>

@@ -9,7 +9,7 @@ import {
 } from "@prisma/client"
 
 import { createAuditLog } from "@/src/lib/audit"
-import type { OrganizationOnboardingInput, OnboardingSubscriptionOption } from "@/src/lib/organizations/validation"
+import type { OrganizationFeatureOverrideInput, OrganizationOnboardingInput, OnboardingSubscriptionOption } from "@/src/lib/organizations/validation"
 import { prisma } from "@/src/lib/prisma"
 import type { CurrentUser } from "@/src/lib/rbac/current-user"
 import { AuthorizationError } from "@/src/lib/rbac/errors"
@@ -174,6 +174,34 @@ export async function getInvitationByToken(token: string) {
   }
 
   return { ...invitation, status }
+}
+
+export async function updateOrganizationFeatureOverride(
+  organizationId: string,
+  input: OrganizationFeatureOverrideInput,
+  actor: CurrentUser,
+) {
+  assertPlatformActor(actor)
+  const organization = await prisma.organization.findUnique({
+    where: { id: organizationId },
+    select: { id: true },
+  })
+  if (!organization) throw new Error("Organization not found.")
+
+  const featureOverride = await prisma.organizationFeatureOverride.upsert({
+    where: { organizationId },
+    create: { organizationId, ...normalizeFeatures(input) },
+    update: normalizeFeatures(input),
+  })
+  await createAuditLog({
+    action: "UPDATE_ORGANIZATION_FEATURE_ACCESS",
+    entityType: "OrganizationFeatureOverride",
+    entityId: featureOverride.id,
+    organizationId,
+    userId: actor.id,
+    metadata: { features: normalizeFeatures(input) },
+  })
+  return featureOverride
 }
 
 function assertPlatformActor(actor: CurrentUser) {

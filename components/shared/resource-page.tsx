@@ -3,21 +3,25 @@
 import { useCurrentUser } from "@/components/rbac/current-user-provider"
 import { hasPermission } from "@/src/lib/rbac/guards"
 import type { Permission } from "@/src/lib/rbac/permissions"
+import { FeatureLock } from "@/components/features/feature-lock"
+import type { FeatureKey } from "@/src/lib/features/feature-keys"
 
 type ResourcePageProps = {
   title: string
   requiredPermission?: Permission
+  requiredFeature?: FeatureKey
 }
 
 export function ResourcePage({
   title,
   requiredPermission,
+  requiredFeature,
 }: ResourcePageProps) {
   const { currentUser } = useCurrentUser()
   const allowed =
     !requiredPermission || hasPermission(currentUser, requiredPermission)
 
-  return (
+  const content = (
     <div className="space-y-8">
       <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
         {title}
@@ -41,4 +45,6 @@ export function ResourcePage({
       </section>
     </div>
   )
+
+  return requiredFeature ? <FeatureLock feature={requiredFeature}>{content}</FeatureLock> : content
 }

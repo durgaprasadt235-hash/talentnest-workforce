@@ -1,4 +1,5 @@
 import { Role } from "@/src/lib/rbac/roles"
+import type { OrganizationFeatureAccess } from "@/src/lib/features/feature-keys"
 
 export type CurrentUser = {
   id?: string
@@ -10,6 +11,7 @@ export type CurrentUser = {
   propertyIds?: string[]
   staffingCompanyId?: string
   companyName?: string
+  featureAccess?: OrganizationFeatureAccess
 }
 
 export const DEFAULT_CURRENT_USER: CurrentUser = {

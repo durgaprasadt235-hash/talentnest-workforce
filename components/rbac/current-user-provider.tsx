@@ -66,6 +66,7 @@ export function CurrentUserProvider({ children }: { children: ReactNode }) {
           propertyIds: user.propertyIds,
           staffingCompanyId: user.staffingCompanyId,
           companyName: user.companyName,
+          featureAccess: user.featureAccess,
         }),
       )
     }

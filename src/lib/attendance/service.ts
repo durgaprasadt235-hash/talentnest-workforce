@@ -18,6 +18,10 @@ import {
 } from "@prisma/client"
 
 import { calculateDistanceMeters } from "@/src/lib/attendance/distance"
+import {
+  assertOrganizationFeatureAccessById,
+} from "@/src/lib/features/organization-feature-access"
+import { FeatureKey } from "@/src/lib/features/feature-keys"
 import type {
   ApproveDeviceRequest,
   AttendanceCorrectionRequestInput,
@@ -161,6 +165,9 @@ export async function requestDevice(input: DeviceRequest) {
   })
 
   if (existing) {
+    if (existing.organizationId) {
+      await assertOrganizationFeatureAccessById(existing.organizationId, FeatureKey.KIOSK)
+    }
     return prisma.attendanceDevice.update({
       where: { id: existing.id },
       data: {
@@ -317,6 +324,8 @@ async function getKioskContext(input: ClockRequest) {
     property: device.property,
   }
 
+  await assertOrganizationFeatureAccessById(activeDevice.organizationId, FeatureKey.KIOSK)
+
   await prisma.attendanceDevice.update({
     where: { id: activeDevice.id },
     data: { lastSeenAt: new Date() },
@@ -341,6 +350,8 @@ export async function verifyKioskEmployee(input: KioskEmployeeVerification) {
   ) {
     throw new Error("This device is not registered or active.")
   }
+
+  await assertOrganizationFeatureAccessById(device.organizationId, FeatureKey.KIOSK)
 
   const employee = await validateKioskEmployee(
     { organizationId: device.organizationId, propertyId: device.propertyId },
@@ -410,6 +421,7 @@ export async function createAttendanceCorrectionRequest(
   ) {
     throw new Error("This device is not registered or active.")
   }
+  await assertOrganizationFeatureAccessById(device.organizationId, FeatureKey.KIOSK)
   const employee = await validateKioskEmployee(
     { organizationId: device.organizationId, propertyId: device.propertyId },
     input,

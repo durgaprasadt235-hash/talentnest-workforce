@@ -2,6 +2,7 @@ import { currentUser } from "@clerk/nextjs/server"
 import { OrganizationInvitationStatus, RecordStatus } from "@prisma/client"
 
 import { prisma } from "@/src/lib/prisma"
+import { getOrganizationFeatureAccess } from "@/src/lib/features/organization-feature-access"
 import type { CurrentUser } from "@/src/lib/rbac/current-user"
 import { AuthorizationError } from "@/src/lib/rbac/errors"
 import { Role, ROLES } from "@/src/lib/rbac/roles"
@@ -111,6 +112,10 @@ export async function resolveClerkCurrentUser(): Promise<CurrentUser> {
       })
     : []
 
+  const featureAccess = user.organizationId
+    ? await getOrganizationFeatureAccess(user.organizationId)
+    : undefined
+
   return {
     id: user.id,
     email: user.email,
@@ -127,5 +132,6 @@ export async function resolveClerkCurrentUser(): Promise<CurrentUser> {
       role === Role.PLATFORM_OWNER || role === Role.PLATFORM_ADMIN
         ? "TalentNest Technologies"
         : user.staffingCompany?.displayName ?? user.organization?.name ?? undefined,
+    featureAccess,
   }
 }

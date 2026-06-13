@@ -27,11 +27,13 @@ import {
 import { useCurrentUser } from "@/components/rbac/current-user-provider"
 import { cn } from "@/lib/utils"
 import { Role, type Role as RoleType } from "@/src/lib/rbac/roles"
+import { FeatureKey, type FeatureKey as FeatureKeyType } from "@/src/lib/features/feature-keys"
 
 type NavItem = {
   label: string
   href: string
   icon: LucideIcon
+  feature?: FeatureKeyType
 }
 
 type NavSection = {
@@ -48,14 +50,14 @@ const item = {
   legalEntities: { label: "Legal Entities", href: "/legal-entities", icon: Building2 },
   departments: { label: "Departments", href: "/departments", icon: UsersRound },
   employees: { label: "Employees", href: "/employees", icon: Users },
-  staffingCompanies: { label: "Staffing Companies", href: "/staffing-companies", icon: UserCog },
-  schedules: { label: "Schedules", href: "/schedules", icon: CalendarDays },
-  attendance: { label: "Attendance", href: "/attendance", icon: ClipboardCheck },
-  kiosk: { label: "Attendance Kiosk", href: "/kiosk", icon: MonitorSmartphone },
-  weeklyAttendance: { label: "Weekly Attendance", href: "/weekly-attendance", icon: CalendarCheck2 },
-  timesheets: { label: "Timesheets", href: "/timesheets", icon: Clock3 },
-  invoices: { label: "Invoices", href: "/invoices", icon: FileCheck2 },
-  payments: { label: "Payments", href: "/payments", icon: CircleDollarSign },
+  staffingCompanies: { label: "Staffing Companies", href: "/staffing-companies", icon: UserCog, feature: FeatureKey.STAFFING },
+  schedules: { label: "Schedules", href: "/schedules", icon: CalendarDays, feature: FeatureKey.SCHEDULING },
+  attendance: { label: "Attendance", href: "/attendance", icon: ClipboardCheck, feature: FeatureKey.ATTENDANCE },
+  kiosk: { label: "Attendance Kiosk", href: "/kiosk", icon: MonitorSmartphone, feature: FeatureKey.KIOSK },
+  weeklyAttendance: { label: "Weekly Attendance", href: "/weekly-attendance", icon: CalendarCheck2, feature: FeatureKey.TIMESHEETS },
+  timesheets: { label: "Timesheets", href: "/timesheets", icon: Clock3, feature: FeatureKey.TIMESHEETS },
+  invoices: { label: "Invoices", href: "/invoices", icon: FileCheck2, feature: FeatureKey.INVOICES },
+  payments: { label: "Payments", href: "/payments", icon: CircleDollarSign, feature: FeatureKey.PAYMENTS },
   users: { label: "Users & Access", href: "/users", icon: UserCog },
   roles: { label: "Roles", href: "/roles", icon: ShieldCheck },
   auditLogs: { label: "Audit Logs", href: "/audit-logs", icon: ScrollText },
@@ -120,7 +122,15 @@ const roleNavigation: Record<RoleType, NavSection[]> = {
 export function AppSidebar({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname()
   const { currentUser } = useCurrentUser()
+  const bypass = currentUser.role === Role.PLATFORM_OWNER || currentUser.role === Role.PLATFORM_ADMIN
   const navigation = roleNavigation[currentUser.role]
+    .map((section) => ({
+      ...section,
+      items: section.items.filter(
+        (navItem) => bypass || !navItem.feature || currentUser.featureAccess?.features[navItem.feature] !== false,
+      ),
+    }))
+    .filter((section) => section.items.length > 0)
 
   return (
     <div className="flex h-full flex-col bg-sidebar text-sidebar-foreground">
