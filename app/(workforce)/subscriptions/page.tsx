@@ -1,9 +1,10 @@
 import type { Metadata } from "next"
 
-import { ResourcePage } from "@/components/shared/resource-page"
+import { BillingPlans } from "@/components/billing/billing-plans"
+import { isStripeConfigured } from "@/src/lib/stripe/server"
 
 export const metadata: Metadata = { title: "Subscriptions" }
 
 export default function Page() {
-  return <ResourcePage title="Subscriptions" />
+  return <BillingPlans title="Subscriptions" configured={isStripeConfigured()} />
 }

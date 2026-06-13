@@ -9,6 +9,7 @@ const isPublicRoute = createRouteMatcher([
   "/api/attendance/clock-out",
   "/api/attendance/corrections",
   "/api/attendance/devices/request",
+  "/api/billing/stripe/webhook",
 ]);
 
 export default clerkMiddleware(async (auth, request) => {
