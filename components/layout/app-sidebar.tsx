@@ -79,10 +79,10 @@ const navigation: { label?: string; items: NavItem[] }[] = [
     ],
   },
   {
-    label: "Administration",
+    label: "Settings",
     items: [
       { label: "Device Management", href: "/devices", icon: MonitorSmartphone, permission: Permission.MANAGE_PROPERTIES },
-      { label: "Users", href: "/users", icon: UserCog, permission: Permission.VIEW_USERS },
+      { label: "Users & Access", href: "/users", icon: UserCog, permission: Permission.VIEW_USERS },
       { label: "Roles", href: "/roles", icon: ShieldCheck, permission: Permission.VIEW_USERS },
       { label: "Audit Logs", href: "/audit-logs", icon: ScrollText, permission: Permission.VIEW_AUDIT_LOGS },
     ],

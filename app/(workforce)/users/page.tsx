@@ -1,9 +1,7 @@
 import type { Metadata } from "next"
-import { ResourcePage } from "@/components/shared/resource-page"
-import { pageConfig } from "@/lib/page-config"
-import { Permission } from "@/src/lib/rbac/permissions"
+import { UserAccessManagement } from "@/components/users/user-access-management"
 
-export const metadata: Metadata = { title: "Users" }
+export const metadata: Metadata = { title: "Users & Access" }
 export default function Page() {
-  return <ResourcePage title={pageConfig.users} requiredPermission={Permission.VIEW_USERS} />
+  return <UserAccessManagement />
 }

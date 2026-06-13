@@ -9,10 +9,11 @@ export type CurrentUser = {
   organizationId?: string
   propertyIds?: string[]
   staffingCompanyId?: string
+  companyName?: string
 }
 
 export const DEFAULT_CURRENT_USER: CurrentUser = {
-  role: Role.CORPORATE_ADMIN,
+  role: Role.EMPLOYEE,
 }
 
 const MOCK_ROLE_CONTEXT: Partial<Record<Role, Omit<CurrentUser, "role">>> = {

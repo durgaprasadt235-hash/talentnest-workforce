@@ -154,15 +154,16 @@ export async function voidInvoice(id: string, user: CurrentUser) {
 function invoiceScope(user: CurrentUser): Prisma.WeeklyAttendanceInvoiceWhereInput {
   switch (user.role) {
     case Role.FINANCE_USER:
-    case Role.READ_ONLY_AUDITOR:
+    case Role.PLATFORM_OWNER:
+    case Role.PLATFORM_ADMIN:
       return {}
     case Role.CORPORATE_ADMIN:
     case Role.ORGANIZATION_OWNER:
       return user.organizationId ? { organizationId: user.organizationId } : {}
     case Role.PROPERTY_MANAGER:
-    case Role.REGIONAL_MANAGER:
       return { propertyId: { in: user.propertyIds ?? [] } }
-    case Role.STAFFING_COMPANY_ADMIN:
+    case Role.STAFFING_ADMIN:
+    case Role.STAFFING_BILLING:
       return user.staffingCompanyId
         ? {
             type: WeeklyAttendanceInvoiceType.STAFFING,

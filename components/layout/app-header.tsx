@@ -6,6 +6,7 @@ import { Menu, ShieldCheck } from "lucide-react"
 
 import { AppSidebar } from "@/components/layout/app-sidebar"
 import { useCurrentUser } from "@/components/rbac/current-user-provider"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
   Sheet,
@@ -74,6 +75,15 @@ export function AppHeader() {
           </SignUpButton>
         </Show>
         <Show when="signed-in">
+          <div className="hidden text-right md:block">
+            <p className="text-sm font-semibold">
+              {[currentUser.firstName, currentUser.lastName].filter(Boolean).join(" ") || currentUser.email}
+            </p>
+            <div className="mt-0.5 flex items-center justify-end gap-1.5 text-xs text-muted-foreground">
+              <Badge className="px-2 py-0.5">{currentUser.role}</Badge>
+              {currentUser.companyName && <span>· {currentUser.companyName}</span>}
+            </div>
+          </div>
           <UserButton />
         </Show>
       </div>

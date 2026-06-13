@@ -24,7 +24,7 @@ const CurrentUserContext = createContext<CurrentUserContextValue | null>(null)
 
 export function CurrentUserProvider({ children }: { children: ReactNode }) {
   const [currentUser, setCurrentUser] = useState<CurrentUser>(() =>
-    createMockCurrentUser(Role.READ_ONLY_AUDITOR),
+    createMockCurrentUser(Role.EMPLOYEE),
   )
 
   useEffect(() => {
@@ -65,6 +65,7 @@ export function CurrentUserProvider({ children }: { children: ReactNode }) {
           organizationId: user.organizationId,
           propertyIds: user.propertyIds,
           staffingCompanyId: user.staffingCompanyId,
+          companyName: user.companyName,
         }),
       )
     }

@@ -211,6 +211,7 @@ model Property {
   weeklyAttendanceLines        WeeklyAttendanceLine[]
   weeklyAttendanceInvoices     WeeklyAttendanceInvoice[]
   attendanceCorrectionRequests AttendanceCorrectionRequest[]
+  userPropertyAccesses         UserPropertyAccess[]
 
   @@index([organizationId])
 }
@@ -273,18 +274,21 @@ model Employee {
 }
 
 model User {
-  id             String       @id @default(cuid())
-  clerkUserId    String?      @unique
-  organizationId String?
-  email          String       @unique
-  firstName      String
-  lastName       String
-  role           String
-  status         RecordStatus @default(ACTIVE)
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+  id                String       @id @default(cuid())
+  clerkUserId       String?      @unique
+  organizationId    String?
+  staffingCompanyId String?
+  email             String       @unique
+  firstName         String
+  lastName          String
+  role              String
+  status            RecordStatus @default(ACTIVE)
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
 
   organization                    Organization?           @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  staffingCompany                 StaffingCompany?        @relation(fields: [staffingCompanyId], references: [id], onDelete: SetNull)
+  propertyAccesses                UserPropertyAccess[]
   requestedExceptions             AttendanceException[]   @relation("RequestedBy")
   approvedExceptions              AttendanceException[]   @relation("ApprovedBy")
   releasedFreezes                 AttendanceFreeze[]      @relation("ReleasedBy")
@@ -292,6 +296,20 @@ model User {
   auditLogs                       AuditLog[]
 
   @@index([organizationId])
+  @@index([staffingCompanyId])
+}
+
+model UserPropertyAccess {
+  id         String   @id @default(cuid())
+  userId     String
+  propertyId String
+  createdAt  DateTime @default(now())
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, propertyId])
+  @@index([propertyId])
 }
 
 model StaffingCompany {
@@ -309,6 +327,7 @@ model StaffingCompany {
   employees                Employee[]
   weeklyAttendanceLines    WeeklyAttendanceLine[]
   weeklyAttendanceInvoices WeeklyAttendanceInvoice[]
+  users                    User[]
 }
 
 model AttendanceDevice {

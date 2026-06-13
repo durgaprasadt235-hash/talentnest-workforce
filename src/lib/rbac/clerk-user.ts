@@ -23,11 +23,21 @@ export async function resolveClerkCurrentUser(): Promise<CurrentUser> {
 
   let user = await prisma.user.findUnique({
     where: { clerkUserId: clerkUser.id },
+    include: {
+      organization: { select: { name: true } },
+      staffingCompany: { select: { displayName: true } },
+      propertyAccesses: { select: { propertyId: true } },
+    },
   })
 
   if (!user) {
     const emailUser = await prisma.user.findFirst({
       where: { email: { equals: email, mode: "insensitive" } },
+      include: {
+        organization: { select: { name: true } },
+        staffingCompany: { select: { displayName: true } },
+        propertyAccesses: { select: { propertyId: true } },
+      },
     })
 
     if (emailUser?.clerkUserId && emailUser.clerkUserId !== clerkUser.id) {
@@ -38,6 +48,11 @@ export async function resolveClerkCurrentUser(): Promise<CurrentUser> {
       ? await prisma.user.update({
           where: { id: emailUser.id },
           data: { clerkUserId: clerkUser.id },
+          include: {
+            organization: { select: { name: true } },
+            staffingCompany: { select: { displayName: true } },
+            propertyAccesses: { select: { propertyId: true } },
+          },
         })
       : null
   }
@@ -55,7 +70,12 @@ export async function resolveClerkCurrentUser(): Promise<CurrentUser> {
         email,
         firstName: clerkUser.firstName || "Organization",
         lastName: clerkUser.lastName || "Owner",
-        role: Role.ORGANIZATION_OWNER,
+        role: Role.PLATFORM_OWNER,
+      },
+      include: {
+        organization: { select: { name: true } },
+        staffingCompany: { select: { displayName: true } },
+        propertyAccesses: { select: { propertyId: true } },
       },
     })
   }
@@ -69,7 +89,7 @@ export async function resolveClerkCurrentUser(): Promise<CurrentUser> {
     throw new AuthorizationError("User has an invalid TalentNest role.")
   }
 
-  const properties = user.organizationId
+  const organizationProperties = user.organizationId
     ? await prisma.property.findMany({
         where: { organizationId: user.organizationId },
         select: { id: true },
@@ -83,7 +103,14 @@ export async function resolveClerkCurrentUser(): Promise<CurrentUser> {
     lastName: user.lastName,
     role,
     organizationId: user.organizationId ?? undefined,
-    propertyIds: properties.map((property) => property.id),
-    staffingCompanyId: undefined,
+    propertyIds:
+      role === Role.PROPERTY_MANAGER
+        ? user.propertyAccesses.map((access) => access.propertyId)
+        : organizationProperties.map((property) => property.id),
+    staffingCompanyId: user.staffingCompanyId ?? undefined,
+    companyName:
+      role === Role.PLATFORM_OWNER || role === Role.PLATFORM_ADMIN
+        ? "TalentNest Technologies"
+        : user.staffingCompany?.displayName ?? user.organization?.name ?? undefined,
   }
 }

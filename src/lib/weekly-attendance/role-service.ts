@@ -55,8 +55,8 @@ export async function listWeeklyAttendanceByRole(
   const role = user.role
 
   if (
-    role === "STAFFING_COMPANY_ADMIN" ||
-    role === "STAFFING_COMPANY_COORDINATOR"
+    role === "STAFFING_ADMIN" ||
+    role === "STAFFING_BILLING"
   ) {
     if (!user.staffingCompanyId) {
       return {
@@ -68,7 +68,7 @@ export async function listWeeklyAttendanceByRole(
     return listStaffingCompanyBatches(user.staffingCompanyId, filters)
   }
 
-  if (role === "FINANCE_USER") {
+  if (role === "FINANCE_USER" || role === "PLATFORM_OWNER" || role === "PLATFORM_ADMIN") {
     return listFinanceBatches(filters)
   }
 
@@ -283,7 +283,7 @@ export async function getWeeklyAttendanceBatchByRole(
   if (!batch) throw new Error("Weekly attendance batch not found.")
 
   // Enforce visibility rules
-  if (user.role === "STAFFING_COMPANY_ADMIN" || user.role === "STAFFING_COMPANY_COORDINATOR") {
+  if (user.role === "STAFFING_ADMIN" || user.role === "STAFFING_BILLING") {
     if (!user.staffingCompanyId) throw new Error("Unauthorized.")
     if (
       batch.status !== WeeklyAttendanceBatchStatus.APPROVED &&

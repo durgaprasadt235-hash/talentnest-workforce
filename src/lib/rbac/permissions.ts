@@ -54,14 +54,14 @@ const allViewPermissions: Permission[] = [
   Permission.VIEW_AUDIT_LOGS,
 ]
 
+const allPermissions = Object.values(Permission)
+
 export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
-  [Role.PLATFORM_SUPER_ADMIN]: [
-    Permission.VIEW_USERS,
-    Permission.MANAGE_USERS,
-    Permission.VIEW_AUDIT_LOGS,
-  ],
+  [Role.PLATFORM_OWNER]: allPermissions,
+  [Role.PLATFORM_ADMIN]: allPermissions,
   [Role.ORGANIZATION_OWNER]: [
     ...allViewPermissions,
+    Permission.MANAGE_USERS,
     Permission.MANAGE_CORPORATE_WEEKLY_ATTENDANCE,
   ],
   [Role.CORPORATE_ADMIN]: [
@@ -89,15 +89,6 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     Permission.VIEW_WEEKLY_ATTENDANCE,
     Permission.MANAGE_WEEKLY_ATTENDANCE_PAYABLES,
   ],
-  [Role.REGIONAL_MANAGER]: [
-    Permission.VIEW_PROPERTIES,
-    Permission.VIEW_DEPARTMENTS,
-    Permission.VIEW_EMPLOYEES,
-    Permission.VIEW_SCHEDULES,
-    Permission.VIEW_ATTENDANCE,
-    Permission.VIEW_TIMESHEETS,
-    Permission.VIEW_INVOICES,
-  ],
   [Role.PROPERTY_MANAGER]: [
     Permission.VIEW_PROPERTIES,
     Permission.VIEW_DEPARTMENTS,
@@ -118,26 +109,20 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     Permission.VIEW_INVOICES,
     Permission.MANAGE_INVOICES,
   ],
-  [Role.DEPARTMENT_SUPERVISOR]: [
-    Permission.VIEW_SCHEDULES,
-    Permission.VIEW_ATTENDANCE,
-  ],
-  [Role.STAFFING_COMPANY_ADMIN]: [
+  [Role.STAFFING_ADMIN]: [
     Permission.VIEW_EMPLOYEES,
     Permission.VIEW_TIMESHEETS,
     Permission.VIEW_INVOICES,
     Permission.VIEW_PAYMENTS,
     Permission.VIEW_WEEKLY_ATTENDANCE,
   ],
-  [Role.STAFFING_COMPANY_COORDINATOR]: [
-    Permission.VIEW_EMPLOYEES,
-    Permission.VIEW_SCHEDULES,
-    Permission.VIEW_ATTENDANCE,
-    Permission.VIEW_TIMESHEETS,
+  [Role.STAFFING_BILLING]: [
+    Permission.VIEW_INVOICES,
+    Permission.VIEW_PAYMENTS,
+    Permission.VIEW_WEEKLY_ATTENDANCE,
   ],
   [Role.EMPLOYEE]: [
     Permission.VIEW_SCHEDULES,
     Permission.VIEW_ATTENDANCE,
   ],
-  [Role.READ_ONLY_AUDITOR]: allViewPermissions,
 }

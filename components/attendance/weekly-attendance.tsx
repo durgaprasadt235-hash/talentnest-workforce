@@ -204,8 +204,8 @@ export function WeeklyAttendance() {
   const canSendFinance = currentUser.role === "CORPORATE_ADMIN"
   const isPropertyManager = currentUser.role === "PROPERTY_MANAGER"
   const isStaffingCompanyAdmin = [
-    "STAFFING_COMPANY_ADMIN",
-    "STAFFING_COMPANY_COORDINATOR",
+    "STAFFING_ADMIN",
+    "STAFFING_BILLING",
   ].includes(currentUser.role)
   const isFinanceUser = currentUser.role === "FINANCE_USER"
 
