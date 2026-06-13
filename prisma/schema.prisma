@@ -164,6 +164,7 @@ model Organization {
   updatedAt DateTime     @updatedAt
 
   properties                   Property[]
+  legalEntities                LegalEntity[]
   departments                  Department[]
   employees                    Employee[]
   users                        User[]
@@ -182,9 +183,32 @@ model Organization {
   attendanceCorrectionRequests AttendanceCorrectionRequest[]
 }
 
+model LegalEntity {
+  id             String       @id @default(cuid())
+  organizationId String
+  legalName      String
+  displayName    String
+  ein            String?
+  address        String?
+  city           String?
+  state          String?
+  zipCode        String?
+  status         RecordStatus @default(ACTIVE)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  properties   Property[]
+
+  @@unique([organizationId, legalName])
+  @@index([organizationId])
+  @@index([status])
+}
+
 model Property {
   id             String       @id @default(cuid())
   organizationId String
+  legalEntityId  String?
   name           String
   code           String
   status         RecordStatus @default(ACTIVE)
@@ -197,6 +221,7 @@ model Property {
   updatedAt      DateTime     @updatedAt
 
   organization                 Organization                  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  legalEntity                  LegalEntity?                  @relation(fields: [legalEntityId], references: [id], onDelete: SetNull)
   departments                  Department[]
   employees                    Employee[]
   attendanceDevices            AttendanceDevice[]
@@ -214,6 +239,7 @@ model Property {
   userPropertyAccesses         UserPropertyAccess[]
 
   @@index([organizationId])
+  @@index([legalEntityId])
 }
 
 model Department {

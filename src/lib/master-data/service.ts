@@ -6,11 +6,13 @@ import { prisma } from "@/src/lib/prisma"
 
 const organizationSelect = {
   id: true, name: true, slug: true, status: true,
+  _count: { select: { legalEntities: true, properties: true } },
 } satisfies Prisma.OrganizationSelect
 const propertySelect = {
-  id: true, organizationId: true, name: true, code: true, status: true,
+  id: true, organizationId: true, legalEntityId: true, name: true, code: true, status: true,
   address: true, city: true, state: true, zipCode: true, timeZone: true,
   organization: { select: { id: true, name: true } },
+  legalEntity: { select: { id: true, displayName: true } },
 } satisfies Prisma.PropertySelect
 const departmentSelect = {
   id: true, organizationId: true, propertyId: true, name: true, code: true, status: true,
@@ -43,22 +45,23 @@ export async function setOrganizationStatus(id: string, status: RecordStatus) {
 }
 
 export async function listProperties() {
-  const [properties, organizations] = await Promise.all([
+  const [properties, organizations, legalEntities] = await Promise.all([
     prisma.property.findMany({ select: propertySelect, orderBy: { name: "asc" } }),
     prisma.organization.findMany({ where: { status: RecordStatus.ACTIVE }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
+    prisma.legalEntity.findMany({ select: { id: true, organizationId: true, displayName: true }, orderBy: { displayName: "asc" } }),
   ])
-  return { properties, options: { organizations } }
+  return { properties, options: { organizations, legalEntities } }
 }
 
 export async function createProperty(input: PropertyInput) {
-  await ensureOrganization(input.organizationId)
+  await ensurePropertyAssignment(input, true)
   const item = await prisma.property.create({ data: normalizeProperty(input), select: propertySelect })
   await audit("CREATE_PROPERTY", "Property", item.id, item.organizationId, item.id)
   return item
 }
 
 export async function updateProperty(id: string, input: PropertyInput) {
-  await ensureOrganization(input.organizationId)
+  await ensurePropertyAssignment(input, false)
   const item = await prisma.property.update({ where: { id }, data: normalizeProperty(input), select: propertySelect })
   await audit("UPDATE_PROPERTY", "Property", item.id, item.organizationId, item.id)
   return item
@@ -110,6 +113,28 @@ async function ensureOrganization(id: string) {
   }
 }
 
+async function ensurePropertyAssignment(input: PropertyInput, requireLegalEntityWhenAvailable: boolean) {
+  await ensureOrganization(input.organizationId)
+  if (input.legalEntityId) {
+    const legalEntity = await prisma.legalEntity.findUnique({
+      where: { id: input.legalEntityId },
+      select: { organizationId: true },
+    })
+    if (!legalEntity) throw new Error("Legal entity not found.")
+    if (legalEntity.organizationId !== input.organizationId) {
+      throw new Error("Legal entity does not belong to the selected organization.")
+    }
+    return
+  }
+
+  if (
+    requireLegalEntityWhenAvailable &&
+    (await prisma.legalEntity.count({ where: { organizationId: input.organizationId } })) > 0
+  ) {
+    throw new Error("Legal entity is required for new properties in this organization.")
+  }
+}
+
 async function ensureDepartmentAssignment(input: DepartmentInput) {
   const property = await prisma.property.findUnique({ where: { id: input.propertyId }, select: { organizationId: true } })
   if (!property) throw new Error("Property not found.")
@@ -117,7 +142,7 @@ async function ensureDepartmentAssignment(input: DepartmentInput) {
 }
 
 function normalizeProperty(input: PropertyInput) {
-  return { ...input, address: input.address || null, city: input.city || null, state: input.state || null, zipCode: input.zipCode || null }
+  return { ...input, legalEntityId: input.legalEntityId || null, address: input.address || null, city: input.city || null, state: input.state || null, zipCode: input.zipCode || null }
 }
 
 function audit(action: string, entityType: string, entityId: string, organizationId: string, propertyId?: string) {

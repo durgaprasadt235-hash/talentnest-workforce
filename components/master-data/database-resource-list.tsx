@@ -18,6 +18,7 @@ type Kind = "organization" | "property" | "department"
 type Item = {
   id: string
   organizationId?: string
+  legalEntityId?: string | null
   propertyId?: string
   name: string
   slug?: string
@@ -29,11 +30,15 @@ type Item = {
   zipCode?: string | null
   timeZone?: string
   organization?: { id: string; name: string }
+  legalEntity?: { id: string; displayName: string } | null
   property?: { id: string; name: string }
+  _count?: { legalEntities: number; properties: number }
 }
 type Option = { id: string; name: string; organizationId?: string }
+type LegalEntityOption = { id: string; displayName: string; organizationId: string }
 type Form = {
   organizationId: string
+  legalEntityId: string
   propertyId: string
   name: string
   slug: string
@@ -46,7 +51,7 @@ type Form = {
 }
 
 const emptyForm: Form = {
-  organizationId: "", propertyId: "", name: "", slug: "", code: "",
+  organizationId: "", legalEntityId: "", propertyId: "", name: "", slug: "", code: "",
   address: "", city: "", state: "", zipCode: "", timeZone: "America/New_York",
 }
 const selectClass = "h-10 w-full rounded-lg border bg-background px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
@@ -85,6 +90,7 @@ export function DatabaseResourceList({ kind }: { kind: Kind }) {
   const [items, setItems] = useState<Item[]>([])
   const [organizations, setOrganizations] = useState<Option[]>([])
   const [properties, setProperties] = useState<Option[]>([])
+  const [legalEntities, setLegalEntities] = useState<LegalEntityOption[]>([])
   const [form, setForm] = useState<Form>(emptyForm)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [open, setOpen] = useState(false)
@@ -103,6 +109,7 @@ export function DatabaseResourceList({ kind }: { kind: Kind }) {
       setItems(result[settings.key])
       setOrganizations(result.options?.organizations ?? [])
       setProperties(result.options?.properties ?? [])
+      setLegalEntities(result.options?.legalEntities ?? [])
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unable to load records.")
     } finally {
@@ -128,6 +135,7 @@ export function DatabaseResourceList({ kind }: { kind: Kind }) {
     setEditingId(item.id)
     setForm({
       organizationId: item.organizationId ?? "",
+      legalEntityId: item.legalEntityId ?? "",
       propertyId: item.propertyId ?? "",
       name: item.name,
       slug: item.slug ?? "",
@@ -147,7 +155,7 @@ export function DatabaseResourceList({ kind }: { kind: Kind }) {
     setForm((current) => ({
       ...current,
       [key]: value,
-      ...(key === "organizationId" ? { propertyId: "" } : {}),
+      ...(key === "organizationId" ? { propertyId: "", legalEntityId: "" } : {}),
     }))
   }
 
@@ -160,7 +168,7 @@ export function DatabaseResourceList({ kind }: { kind: Kind }) {
         ? { name: form.name, slug: form.slug }
         : kind === "property"
           ? {
-              organizationId: form.organizationId, name: form.name, code: form.code,
+              organizationId: form.organizationId, legalEntityId: form.legalEntityId || null, name: form.name, code: form.code,
               address: form.address || null, city: form.city || null, state: form.state || null,
               zipCode: form.zipCode || null, timeZone: form.timeZone,
             }
@@ -199,6 +207,7 @@ export function DatabaseResourceList({ kind }: { kind: Kind }) {
   }
 
   const availableProperties = properties.filter((item) => item.organizationId === form.organizationId)
+  const availableLegalEntities = legalEntities.filter((item) => item.organizationId === form.organizationId)
 
   return (
     <div className="space-y-6">
@@ -229,7 +238,7 @@ export function DatabaseResourceList({ kind }: { kind: Kind }) {
                 <tbody>{items.map((item) => (
                   <tr key={item.id}>
                     <TableCell className="font-medium">{item.name}</TableCell>
-                    <TableCell>{item.property?.name ?? item.organization?.name ?? "—"}</TableCell>
+                    <TableCell>{item.legalEntity?.displayName ?? item.property?.name ?? item.organization?.name ?? "—"}</TableCell>
                     <TableCell>{detail(kind, item)}</TableCell>
                     <TableCell><Badge className={item.status === "ACTIVE" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : ""}>{item.status}</Badge></TableCell>
                     {canManage && <TableCell><div className="flex gap-2">
@@ -256,6 +265,7 @@ export function DatabaseResourceList({ kind }: { kind: Kind }) {
             </SheetHeader>
             <div className="space-y-4 px-4">
               {kind !== "organization" && <Field label="Organization"><select className={selectClass} required value={form.organizationId} onChange={(event) => updateForm("organizationId", event.target.value)}><option value="">Select organization</option>{organizations.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field>}
+              {kind === "property" && <Field label="Legal Entity / LLC"><select className={selectClass} required={!editingId && availableLegalEntities.length > 0} value={form.legalEntityId} onChange={(event) => updateForm("legalEntityId", event.target.value)}><option value="">{availableLegalEntities.length ? "Select legal entity" : "No legal entities configured"}</option>{availableLegalEntities.map((item) => <option key={item.id} value={item.id}>{item.displayName}</option>)}</select></Field>}
               {kind === "department" && <Field label="Property"><select className={selectClass} required value={form.propertyId} onChange={(event) => updateForm("propertyId", event.target.value)}><option value="">Select property</option>{availableProperties.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field>}
               <Field label="Name"><Input required value={form.name} onChange={(event) => updateForm("name", event.target.value)} /></Field>
               {kind === "organization" && <Field label="Slug"><Input required value={form.slug} onChange={(event) => updateForm("slug", event.target.value)} /></Field>}
@@ -283,7 +293,7 @@ function singular(title: string) {
   return title === "Properties" ? "Property" : title.slice(0, -1)
 }
 function detail(kind: Kind, item: Item) {
-  if (kind === "organization") return item.slug
+  if (kind === "organization") return `${item.slug} · ${item._count?.legalEntities ?? 0} legal entities · ${item._count?.properties ?? 0} properties`
   if (kind === "department") return item.code
   return [item.code, [item.city, item.state].filter(Boolean).join(", ")].filter(Boolean).join(" · ") || "—"
 }

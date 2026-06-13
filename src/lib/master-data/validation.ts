@@ -12,6 +12,7 @@ export const organizationSchema = z.object({
 
 export const propertySchema = z.object({
   organizationId: requiredText,
+  legalEntityId: z.string().trim().min(1).nullable().optional(),
   name: requiredText,
   code: z.string().trim().min(1).max(50),
   status: z.enum(RecordStatus).optional(),
@@ -20,6 +21,18 @@ export const propertySchema = z.object({
   state: optionalText,
   zipCode: optionalText,
   timeZone: z.string().trim().min(1).max(100),
+})
+
+export const legalEntitySchema = z.object({
+  organizationId: requiredText,
+  legalName: requiredText,
+  displayName: requiredText,
+  ein: optionalText,
+  address: optionalText,
+  city: optionalText,
+  state: optionalText,
+  zipCode: optionalText,
+  status: z.enum(RecordStatus).optional(),
 })
 
 export const departmentSchema = z.object({
@@ -32,4 +45,5 @@ export const departmentSchema = z.object({
 
 export type OrganizationInput = z.infer<typeof organizationSchema>
 export type PropertyInput = z.infer<typeof propertySchema>
+export type LegalEntityInput = z.infer<typeof legalEntitySchema>
 export type DepartmentInput = z.infer<typeof departmentSchema>

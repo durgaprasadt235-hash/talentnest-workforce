@@ -45,6 +45,7 @@ const item = {
   subscriptions: { label: "Subscriptions", href: "/subscriptions", icon: CreditCard },
   platformBilling: { label: "Platform Billing", href: "/platform-billing", icon: ReceiptText },
   properties: { label: "Properties", href: "/properties", icon: Hotel },
+  legalEntities: { label: "Legal Entities", href: "/legal-entities", icon: Building2 },
   departments: { label: "Departments", href: "/departments", icon: UsersRound },
   employees: { label: "Employees", href: "/employees", icon: Users },
   staffingCompanies: { label: "Staffing Companies", href: "/staffing-companies", icon: UserCog },
@@ -70,7 +71,7 @@ const roleNavigation: Record<RoleType, NavSection[]> = {
   ],
   [Role.PLATFORM_ADMIN]: [
     { items: [item.dashboard] },
-    { label: "Organization", items: [item.organizations, item.properties] },
+    { label: "Organization", items: [item.organizations, item.legalEntities, item.properties] },
     { label: "Workforce", items: [item.employees, item.staffingCompanies] },
     { label: "Operations", items: [item.kiosk, item.weeklyAttendance] },
     { label: "Finance", items: [item.invoices, item.payments] },
@@ -78,7 +79,7 @@ const roleNavigation: Record<RoleType, NavSection[]> = {
   ],
   [Role.ORGANIZATION_OWNER]: [
     { items: [item.dashboard] },
-    { label: "Organization", items: [item.properties, item.departments] },
+    { label: "Organization", items: [item.legalEntities, item.properties, item.departments] },
     { label: "Workforce", items: [item.employees, item.staffingCompanies] },
     { label: "Operations", items: [item.schedules, item.attendance, item.kiosk, item.weeklyAttendance, item.timesheets] },
     { label: "Finance", items: [item.invoices, item.payments] },
@@ -86,7 +87,7 @@ const roleNavigation: Record<RoleType, NavSection[]> = {
   ],
   [Role.CORPORATE_ADMIN]: [
     { items: [item.dashboard] },
-    { label: "Organization", items: [item.properties, item.departments] },
+    { label: "Organization", items: [item.legalEntities, item.properties, item.departments] },
     { label: "Workforce", items: [item.employees, item.staffingCompanies] },
     { label: "Operations", items: [item.schedules, item.kiosk, item.weeklyAttendance, item.timesheets] },
     { label: "Finance", items: [item.invoices, item.payments] },
