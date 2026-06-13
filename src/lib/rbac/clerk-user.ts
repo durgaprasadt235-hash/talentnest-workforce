@@ -1,5 +1,5 @@
 import { currentUser } from "@clerk/nextjs/server"
-import { RecordStatus } from "@prisma/client"
+import { OrganizationInvitationStatus, RecordStatus } from "@prisma/client"
 
 import { prisma } from "@/src/lib/prisma"
 import type { CurrentUser } from "@/src/lib/rbac/current-user"
@@ -82,6 +82,21 @@ export async function resolveClerkCurrentUser(): Promise<CurrentUser> {
 
   if (user.status !== RecordStatus.ACTIVE) {
     throw new AuthorizationError("User is not assigned to TalentNest")
+  }
+
+  if (user.organizationId) {
+    await prisma.organizationInvitation.updateMany({
+      where: {
+        organizationId: user.organizationId,
+        email: { equals: user.email, mode: "insensitive" },
+        status: OrganizationInvitationStatus.PENDING,
+        expiresAt: { gte: new Date() },
+      },
+      data: {
+        status: OrganizationInvitationStatus.ACCEPTED,
+        acceptedAt: new Date(),
+      },
+    })
   }
 
   const role = ROLES.find((candidate) => candidate === user.role)

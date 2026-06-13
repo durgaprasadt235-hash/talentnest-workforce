@@ -3,9 +3,26 @@ import { Prisma, RecordStatus } from "@prisma/client"
 import { createAuditLog } from "@/src/lib/audit"
 import type { DepartmentInput, OrganizationInput, PropertyInput } from "@/src/lib/master-data/validation"
 import { prisma } from "@/src/lib/prisma"
+import type { CurrentUser } from "@/src/lib/rbac/current-user"
+import { Role } from "@/src/lib/rbac/roles"
 
 const organizationSelect = {
-  id: true, name: true, slug: true, status: true,
+  id: true, name: true, slug: true, legalBusinessName: true, contactName: true,
+  contactEmail: true, contactPhone: true, billingAddress: true, billingCity: true,
+  billingState: true, billingZip: true, organizationStatus: true, status: true,
+  subscription: true,
+  featureOverride: true,
+  users: {
+    where: { role: "ORGANIZATION_OWNER" },
+    select: { id: true, firstName: true, lastName: true, email: true, clerkUserId: true },
+    orderBy: { createdAt: "asc" },
+    take: 1,
+  },
+  invitations: {
+    select: { id: true, email: true, status: true, token: true, invitedAt: true, expiresAt: true },
+    orderBy: { invitedAt: "desc" },
+    take: 1,
+  },
   _count: { select: { legalEntities: true, properties: true } },
 } satisfies Prisma.OrganizationSelect
 const propertySelect = {
@@ -20,8 +37,12 @@ const departmentSelect = {
   property: { select: { id: true, name: true } },
 } satisfies Prisma.DepartmentSelect
 
-export function listOrganizations() {
-  return prisma.organization.findMany({ select: organizationSelect, orderBy: { name: "asc" } })
+export function listOrganizations(actor: CurrentUser) {
+  const where =
+    actor.role === Role.PLATFORM_OWNER || actor.role === Role.PLATFORM_ADMIN
+      ? undefined
+      : { id: actor.organizationId ?? "" }
+  return prisma.organization.findMany({ where, select: organizationSelect, orderBy: { name: "asc" } })
 }
 
 export async function createOrganization(input: OrganizationInput) {

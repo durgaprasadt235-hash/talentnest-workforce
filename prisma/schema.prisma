@@ -11,6 +11,36 @@ enum RecordStatus {
   INACTIVE
 }
 
+enum OrganizationStatus {
+  ONBOARDING
+  ACTIVE
+  SUSPENDED
+  CANCELLED
+}
+
+enum SubscriptionBillingCycle {
+  MONTHLY
+  ANNUAL
+  TRIAL
+  MANUAL
+}
+
+enum OrganizationSubscriptionStatus {
+  PENDING
+  TRIAL
+  ACTIVE
+  PAST_DUE
+  SUSPENDED
+  CANCELLED
+}
+
+enum OrganizationInvitationStatus {
+  PENDING
+  ACCEPTED
+  EXPIRED
+  CANCELLED
+}
+
 enum EmployeeStatus {
   ACTIVE
   INACTIVE
@@ -156,12 +186,21 @@ enum WeeklyAttendanceInvoiceStatus {
 }
 
 model Organization {
-  id        String       @id @default(cuid())
-  name      String
-  slug      String       @unique
-  status    RecordStatus @default(ACTIVE)
-  createdAt DateTime     @default(now())
-  updatedAt DateTime     @updatedAt
+  id                 String             @id @default(cuid())
+  name               String
+  slug               String             @unique
+  legalBusinessName  String?
+  contactName        String?
+  contactEmail       String?
+  contactPhone       String?
+  billingAddress     String?
+  billingCity        String?
+  billingState       String?
+  billingZip         String?
+  organizationStatus OrganizationStatus @default(ACTIVE)
+  status             RecordStatus       @default(ACTIVE)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
 
   properties                   Property[]
   legalEntities                LegalEntity[]
@@ -181,6 +220,69 @@ model Organization {
   weeklyAttendanceLines        WeeklyAttendanceLine[]
   weeklyAttendanceInvoices     WeeklyAttendanceInvoice[]
   attendanceCorrectionRequests AttendanceCorrectionRequest[]
+  subscription                 OrganizationSubscription?
+  featureOverride              OrganizationFeatureOverride?
+  invitations                  OrganizationInvitation[]
+}
+
+model OrganizationSubscription {
+  id                   String                         @id @default(cuid())
+  organizationId       String                         @unique
+  planKey              String
+  planName             String
+  billingCycle         SubscriptionBillingCycle
+  status               OrganizationSubscriptionStatus @default(PENDING)
+  trialEndsAt          DateTime?
+  startedAt            DateTime?
+  endsAt               DateTime?
+  stripeCustomerId     String?
+  stripeSubscriptionId String?
+  createdAt            DateTime                       @default(now())
+  updatedAt            DateTime                       @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@index([stripeCustomerId])
+  @@index([stripeSubscriptionId])
+}
+
+model OrganizationFeatureOverride {
+  id               String   @id @default(cuid())
+  organizationId   String   @unique
+  canUseScheduling Boolean  @default(true)
+  canUseAttendance Boolean  @default(false)
+  canUseTimesheets Boolean  @default(true)
+  canUseInvoices   Boolean  @default(true)
+  canUsePayments   Boolean  @default(false)
+  canUseReports    Boolean  @default(true)
+  canUseKiosk      Boolean  @default(false)
+  canUseStaffing   Boolean  @default(false)
+  reason           String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+}
+
+model OrganizationInvitation {
+  id             String                       @id @default(cuid())
+  organizationId String
+  email          String
+  firstName      String
+  lastName       String
+  role           String
+  status         OrganizationInvitationStatus @default(PENDING)
+  token          String                       @unique
+  invitedAt      DateTime                     @default(now())
+  acceptedAt     DateTime?
+  expiresAt      DateTime
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([email, status])
+  @@index([expiresAt])
 }
 
 model LegalEntity {

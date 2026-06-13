@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react"
-import { Pencil, Plus, RotateCcw, UserMinus } from "lucide-react"
+import { Eye, Pencil, Plus, RotateCcw, UserMinus } from "lucide-react"
 
 import { useCurrentUser } from "@/components/rbac/current-user-provider"
 import { Badge } from "@/components/ui/badge"
@@ -24,6 +24,15 @@ type Item = {
   slug?: string
   code?: string
   status: "ACTIVE" | "INACTIVE"
+  organizationStatus?: "ONBOARDING" | "ACTIVE" | "SUSPENDED" | "CANCELLED"
+  legalBusinessName?: string | null
+  contactName?: string | null
+  contactEmail?: string | null
+  contactPhone?: string | null
+  billingAddress?: string | null
+  billingCity?: string | null
+  billingState?: string | null
+  billingZip?: string | null
   address?: string | null
   city?: string | null
   state?: string | null
@@ -32,6 +41,15 @@ type Item = {
   organization?: { id: string; name: string }
   legalEntity?: { id: string; displayName: string } | null
   property?: { id: string; name: string }
+  subscription?: {
+    planName: string
+    billingCycle: string
+    status: string
+    trialEndsAt: string | null
+  } | null
+  featureOverride?: Record<string, boolean | string | null> | null
+  users?: Array<{ id: string; firstName: string; lastName: string; email: string; clerkUserId: string | null }>
+  invitations?: Array<{ id: string; email: string; status: string; token: string; invitedAt: string; expiresAt: string }>
   _count?: { legalEntities: number; properties: number }
 }
 type Option = { id: string; name: string; organizationId?: string }
@@ -94,6 +112,7 @@ export function DatabaseResourceList({ kind }: { kind: Kind }) {
   const [form, setForm] = useState<Form>(emptyForm)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [open, setOpen] = useState(false)
+  const [detailItem, setDetailItem] = useState<Item | null>(null)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState("")
@@ -122,6 +141,13 @@ export function DatabaseResourceList({ kind }: { kind: Kind }) {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void load()
   }, [load])
+
+  useEffect(() => {
+    if (kind !== "organization") return
+    const refresh = () => void load()
+    window.addEventListener("talentnest:organizations-changed", refresh)
+    return () => window.removeEventListener("talentnest:organizations-changed", refresh)
+  }, [kind, load])
 
   function startCreate() {
     setEditingId(null)
@@ -216,7 +242,7 @@ export function DatabaseResourceList({ kind }: { kind: Kind }) {
           <h1 className="text-3xl font-semibold tracking-tight">{settings.title}</h1>
           <p className="mt-2 text-sm text-muted-foreground">{settings.description}</p>
         </div>
-        {canManage && <Button onClick={startCreate}><Plus /> Create {singular(settings.title)}</Button>}
+        {canManage && kind !== "organization" && <Button onClick={startCreate}><Plus /> Create {singular(settings.title)}</Button>}
       </div>
       {message && <p className="text-sm text-emerald-700">{message}</p>}
       {error && <p className="text-sm text-destructive">{error}</p>}
@@ -233,7 +259,7 @@ export function DatabaseResourceList({ kind }: { kind: Kind }) {
                   <TableHead>Assignment</TableHead>
                   <TableHead>Details</TableHead>
                   <TableHead>Status</TableHead>
-                  {canManage && <TableHead>Actions</TableHead>}
+                  {(canManage || kind === "organization") && <TableHead>Actions</TableHead>}
                 </tr></thead>
                 <tbody>{items.map((item) => (
                   <tr key={item.id}>
@@ -241,12 +267,13 @@ export function DatabaseResourceList({ kind }: { kind: Kind }) {
                     <TableCell>{item.legalEntity?.displayName ?? item.property?.name ?? item.organization?.name ?? "—"}</TableCell>
                     <TableCell>{detail(kind, item)}</TableCell>
                     <TableCell><Badge className={item.status === "ACTIVE" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : ""}>{item.status}</Badge></TableCell>
-                    {canManage && <TableCell><div className="flex gap-2">
-                      <Button size="sm" variant="outline" onClick={() => startEdit(item)}><Pencil /> Edit</Button>
-                      <Button size="sm" variant="outline" onClick={() => void changeStatus(item)}>
-                        {item.status === "ACTIVE" ? <UserMinus /> : <RotateCcw />}
-                        {item.status === "ACTIVE" ? "Deactivate" : "Reactivate"}
-                      </Button>
+                    {(canManage || kind === "organization") && <TableCell><div className="flex flex-wrap gap-2">
+                      {kind === "organization" && <Button size="sm" variant="outline" onClick={() => setDetailItem(item)}><Eye /> Details</Button>}
+                      {canManage && <><Button size="sm" variant="outline" onClick={() => startEdit(item)}><Pencil /> Edit</Button>
+                        <Button size="sm" variant="outline" onClick={() => void changeStatus(item)}>
+                          {item.status === "ACTIVE" ? <UserMinus /> : <RotateCcw />}
+                          {item.status === "ACTIVE" ? "Deactivate" : "Reactivate"}
+                        </Button></>}
                     </div></TableCell>}
                   </tr>
                 ))}</tbody>
@@ -282,6 +309,11 @@ export function DatabaseResourceList({ kind }: { kind: Kind }) {
           </form>
         </SheetContent>
       </Sheet>
+      <Sheet open={Boolean(detailItem)} onOpenChange={(next) => !next && setDetailItem(null)}>
+        <SheetContent className="overflow-y-auto sm:max-w-xl">
+          {detailItem && <OrganizationDetails item={detailItem} />}
+        </SheetContent>
+      </Sheet>
     </div>
   )
 }
@@ -296,4 +328,30 @@ function detail(kind: Kind, item: Item) {
   if (kind === "organization") return `${item.slug} · ${item._count?.legalEntities ?? 0} legal entities · ${item._count?.properties ?? 0} properties`
   if (kind === "department") return item.code
   return [item.code, [item.city, item.state].filter(Boolean).join(", ")].filter(Boolean).join(" · ") || "—"
+}
+
+function OrganizationDetails({ item }: { item: Item }) {
+  const featureNames = [
+    ["canUseScheduling", "Scheduling"], ["canUseAttendance", "Attendance"], ["canUseTimesheets", "Timesheets"],
+    ["canUseInvoices", "Invoices"], ["canUsePayments", "Payments"], ["canUseReports", "Reports"],
+    ["canUseKiosk", "Kiosk"], ["canUseStaffing", "Staffing"],
+  ] as const
+  const enabled = featureNames.filter(([key]) => item.featureOverride?.[key] === true).map(([, label]) => label)
+  const owner = item.users?.[0]
+  const invitation = item.invitations?.[0]
+
+  return <div className="space-y-6 p-4">
+    <SheetHeader className="px-0"><SheetTitle>{item.name}</SheetTitle><SheetDescription>{item.legalBusinessName ?? item.slug}</SheetDescription></SheetHeader>
+    <div className="flex flex-wrap gap-2"><Badge>{item.organizationStatus ?? "ACTIVE"}</Badge><Badge className="bg-transparent text-foreground">{item.status}</Badge></div>
+    <DetailBlock title="Subscription" lines={item.subscription ? [`${item.subscription.planName} · ${item.subscription.billingCycle}`, `Status: ${item.subscription.status}`, item.subscription.trialEndsAt ? `Trial ends: ${new Date(item.subscription.trialEndsAt).toLocaleDateString()}` : ""] : ["No subscription configured"]} />
+    <DetailBlock title="Feature access" lines={[enabled.length ? enabled.join(", ") : "No feature overrides enabled", typeof item.featureOverride?.reason === "string" ? item.featureOverride.reason : ""]} />
+    <DetailBlock title="Organization owner" lines={owner ? [`${owner.firstName} ${owner.lastName}`, owner.email, owner.clerkUserId ? "Clerk linked" : "Clerk unlinked"] : ["No organization owner"]} />
+    <DetailBlock title="Latest invitation" lines={invitation ? [`${invitation.email} · ${invitation.status}`, `/accept-invitation?token=${invitation.token}`, `Expires: ${new Date(invitation.expiresAt).toLocaleString()}`] : ["No invitation"]} />
+    <DetailBlock title="Setup" lines={[`${item._count?.legalEntities ?? 0} legal entities`, `${item._count?.properties ?? 0} properties`]} />
+    <DetailBlock title="Contact and billing" lines={[item.contactName ?? "", item.contactEmail ?? "", item.contactPhone ?? "", [item.billingAddress, item.billingCity, item.billingState, item.billingZip].filter(Boolean).join(", ")]} />
+  </div>
+}
+
+function DetailBlock({ title, lines }: { title: string; lines: string[] }) {
+  return <section className="rounded-xl border p-4"><h3 className="font-medium">{title}</h3><div className="mt-2 space-y-1 text-sm text-muted-foreground">{lines.filter(Boolean).map((line) => <p key={line} className="break-all">{line}</p>)}</div></section>
 }

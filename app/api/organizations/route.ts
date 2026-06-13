@@ -6,8 +6,8 @@ import { requireServerPermission } from "@/src/lib/rbac/server-guard"
 
 export async function GET(request: Request) {
   try {
-    await requireServerPermission(request, Permission.VIEW_ORGANIZATION)
-    return Response.json({ organizations: await listOrganizations() })
+    const actor = await requireServerPermission(request, Permission.VIEW_ORGANIZATION)
+    return Response.json({ organizations: await listOrganizations(actor) })
   } catch (error) {
     return errorResponse(error, 500)
   }
