@@ -7,7 +7,8 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Table, TableCell, TableHead } from "@/components/ui/table"
-import { mockRoleHeaders } from "@/src/lib/rbac/mock-auth"
+import { hasPermission } from "@/src/lib/rbac/guards"
+import { Permission } from "@/src/lib/rbac/permissions"
 
 type Option = { id: string; name: string }
 type PropertyOption = Option & { organizationId: string }
@@ -33,6 +34,7 @@ type Assignment = {
 
 export function DeviceManagement() {
   const { currentUser } = useCurrentUser()
+  const canManage = hasPermission(currentUser, Permission.MANAGE_DEVICES)
   const [devices, setDevices] = useState<Device[]>([])
   const [organizations, setOrganizations] = useState<Option[]>([])
   const [properties, setProperties] = useState<PropertyOption[]>([])
@@ -41,15 +43,13 @@ export function DeviceManagement() {
   const [busyDeviceId, setBusyDeviceId] = useState("")
 
   const load = useCallback(async () => {
-    const response = await fetch("/api/attendance/devices", {
-      headers: mockRoleHeaders(currentUser.role),
-    })
+    const response = await fetch("/api/attendance/devices")
     const data = await response.json()
     if (!response.ok) throw new Error(data.error)
     setDevices(data.devices)
     setOrganizations(data.organizations)
     setProperties(data.properties)
-  }, [currentUser.role])
+  }, [])
 
   useEffect(() => {
     // Initial remote synchronization is intentionally client-side for the MVP.
@@ -82,7 +82,6 @@ export function DeviceManagement() {
       method: "POST",
       headers: {
         "content-type": "application/json",
-        ...mockRoleHeaders(currentUser.role),
       },
       body: JSON.stringify(assignment),
     })
@@ -97,7 +96,18 @@ export function DeviceManagement() {
     setError("")
     const response = await fetch(`/api/attendance/devices/${deviceId}/reject`, {
       method: "POST",
-      headers: mockRoleHeaders(currentUser.role),
+    })
+    const data = await response.json()
+    setBusyDeviceId("")
+    if (!response.ok) return setError(data.error)
+    await load()
+  }
+
+  async function deactivate(deviceId: string) {
+    setBusyDeviceId(deviceId)
+    setError("")
+    const response = await fetch(`/api/attendance/devices/${deviceId}/deactivate`, {
+      method: "PATCH",
     })
     const data = await response.json()
     setBusyDeviceId("")
@@ -111,15 +121,19 @@ export function DeviceManagement() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-semibold tracking-tight">Device Management</h1>
+        <h1 className="text-3xl font-semibold tracking-tight">
+          {canManage ? "Device Management" : "Device Status & Troubleshooting"}
+        </h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          Approve attendance kiosk requests and assign each device to a property.
+          {canManage
+            ? "Approve attendance kiosk requests and assign each device to a property."
+            : "Review kiosk status, device codes, and last-seen activity for your properties."}
         </p>
       </div>
 
       {error && <p className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">{error}</p>}
 
-      <Card>
+      {canManage && <Card>
         <CardHeader>
           <h2 className="font-semibold">Pending device requests</h2>
         </CardHeader>
@@ -196,7 +210,7 @@ export function DeviceManagement() {
           </Table>
           {pendingDevices.length === 0 && <p className="p-6 text-center text-sm text-muted-foreground">No pending device requests.</p>}
         </CardContent>
-      </Card>
+      </Card>}
 
       <Card>
         <CardHeader>
@@ -204,7 +218,7 @@ export function DeviceManagement() {
         </CardHeader>
         <CardContent className="p-0">
           <Table>
-            <thead><tr><TableHead>Name</TableHead><TableHead>Property</TableHead><TableHead>Type</TableHead><TableHead>Device code</TableHead><TableHead>Status</TableHead><TableHead>Last seen</TableHead></tr></thead>
+            <thead><tr><TableHead>Name</TableHead><TableHead>Property</TableHead><TableHead>Type</TableHead><TableHead>Device code</TableHead><TableHead>Status</TableHead><TableHead>Last seen</TableHead>{canManage && <TableHead>Actions</TableHead>}</tr></thead>
             <tbody>
               {reviewedDevices.map((device) => (
                 <tr key={device.id}>
@@ -214,6 +228,15 @@ export function DeviceManagement() {
                   <TableCell className="font-mono text-xs">{device.deviceCode ?? "Not generated"}</TableCell>
                   <TableCell><DeviceStatus status={device.status} /></TableCell>
                   <TableCell className="text-xs text-muted-foreground">{formatTimestamp(device.lastSeenAt)}</TableCell>
+                  {canManage && (
+                    <TableCell>
+                      {device.status === "ACTIVE" ? (
+                        <Button size="sm" variant="outline" disabled={busyDeviceId === device.id} onClick={() => deactivate(device.id)}>
+                          Deactivate
+                        </Button>
+                      ) : "—"}
+                    </TableCell>
+                  )}
                 </tr>
               ))}
             </tbody>

@@ -7,5 +7,5 @@ import { Permission } from "@/src/lib/rbac/permissions"
 export const metadata: Metadata = { title: "Device Management" }
 
 export default function Page() {
-  return <PermissionGuard permission={Permission.MANAGE_PROPERTIES}><DeviceManagement /></PermissionGuard>
+  return <PermissionGuard permission={Permission.VIEW_DEVICES}><DeviceManagement /></PermissionGuard>
 }

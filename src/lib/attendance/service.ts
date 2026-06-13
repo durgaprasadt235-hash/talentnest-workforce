@@ -28,6 +28,9 @@ import type {
   KioskEmployeeVerification,
 } from "@/src/lib/attendance/types"
 import { prisma } from "@/src/lib/prisma"
+import type { CurrentUser } from "@/src/lib/rbac/current-user"
+import { AuthorizationError } from "@/src/lib/rbac/errors"
+import { Role } from "@/src/lib/rbac/roles"
 import { verifyPin } from "@/src/lib/security/pin"
 
 const LATE_GRACE_MINUTES = 5
@@ -70,21 +73,31 @@ async function audit(
   })
 }
 
-export async function listDevices() {
+export async function listDevices(user: CurrentUser) {
   return prisma.attendanceDevice.findMany({
+    where: deviceScope(user),
     include: { organization: true, property: true },
     orderBy: { createdAt: "desc" },
   })
 }
 
-export async function listDeviceOptions() {
+export async function listDeviceOptions(user: CurrentUser) {
+  const organizationWhere = user.organizationId
+    ? { id: user.organizationId, status: RecordStatus.ACTIVE }
+    : { status: RecordStatus.ACTIVE }
+  const propertyWhere = user.propertyIds?.length
+    ? { id: { in: user.propertyIds }, status: RecordStatus.ACTIVE }
+    : user.organizationId
+      ? { organizationId: user.organizationId, status: RecordStatus.ACTIVE }
+      : { status: RecordStatus.ACTIVE }
+
   const [organizations, properties] = await Promise.all([
     prisma.organization.findMany({
-      where: { status: RecordStatus.ACTIVE },
+      where: organizationWhere,
       orderBy: { name: "asc" },
     }),
     prisma.property.findMany({
-      where: { status: RecordStatus.ACTIVE },
+      where: propertyWhere,
       orderBy: { name: "asc" },
     }),
   ])
@@ -92,7 +105,8 @@ export async function listDeviceOptions() {
   return { organizations, properties }
 }
 
-export async function approveDevice(deviceId: string, input: ApproveDeviceRequest) {
+export async function approveDevice(deviceId: string, input: ApproveDeviceRequest, user: CurrentUser) {
+  assertCanAssignDevice(user, input.organizationId, input.propertyId)
   const device = await prisma.attendanceDevice.findUnique({
     where: { id: deviceId },
   })
@@ -185,7 +199,7 @@ export async function requestDevice(input: DeviceRequest) {
   return pending
 }
 
-export async function rejectDevice(deviceId: string) {
+export async function rejectDevice(deviceId: string, user: CurrentUser) {
   const device = await prisma.attendanceDevice.findUnique({
     where: { id: deviceId },
   })
@@ -193,6 +207,7 @@ export async function rejectDevice(deviceId: string) {
   if (!device || device.status !== AttendanceDeviceStatus.PENDING) {
     throw new Error("Pending device request was not found.")
   }
+  assertDeviceScope(user, device)
 
   const rejected = await prisma.attendanceDevice.update({
     where: { id: device.id },
@@ -203,6 +218,73 @@ export async function rejectDevice(deviceId: string) {
   await audit("ATTENDANCE_DEVICE_REJECTED", "AttendanceDevice", rejected.id)
 
   return rejected
+}
+
+export async function deactivateDevice(deviceId: string, user: CurrentUser) {
+  const device = await prisma.attendanceDevice.findUnique({
+    where: { id: deviceId },
+  })
+
+  if (!device || device.status !== AttendanceDeviceStatus.ACTIVE) {
+    throw new Error("Active device was not found.")
+  }
+  assertDeviceScope(user, device)
+
+  const deactivated = await prisma.attendanceDevice.update({
+    where: { id: device.id },
+    data: { status: AttendanceDeviceStatus.SUSPENDED },
+    include: { organization: true, property: true },
+  })
+
+  await audit(
+    "ATTENDANCE_DEVICE_DEACTIVATED",
+    "AttendanceDevice",
+    deactivated.id,
+    deactivated.organizationId ?? undefined,
+    deactivated.propertyId ?? undefined,
+  )
+
+  return deactivated
+}
+
+function deviceScope(user: CurrentUser): Prisma.AttendanceDeviceWhereInput | undefined {
+  if (user.role === Role.PLATFORM_OWNER || user.role === Role.PLATFORM_ADMIN) return undefined
+  if (user.role === Role.PROPERTY_MANAGER) {
+    return { propertyId: { in: user.propertyIds ?? [] } }
+  }
+  if (user.organizationId) {
+    return {
+      OR: [
+        { organizationId: user.organizationId },
+        { organizationId: null, status: AttendanceDeviceStatus.PENDING },
+      ],
+    }
+  }
+  throw new AuthorizationError("You do not have permission to view devices.")
+}
+
+function assertCanAssignDevice(user: CurrentUser, organizationId: string, propertyId: string) {
+  if (user.role === Role.PLATFORM_OWNER || user.role === Role.PLATFORM_ADMIN) return
+  if (user.organizationId !== organizationId) {
+    throw new AuthorizationError("You cannot assign a device outside your organization.")
+  }
+  if (user.propertyIds?.length && !user.propertyIds.includes(propertyId)) {
+    throw new AuthorizationError("You cannot assign a device outside your properties.")
+  }
+}
+
+function assertDeviceScope(
+  user: CurrentUser,
+  device: { organizationId: string | null; propertyId: string | null },
+) {
+  if (user.role === Role.PLATFORM_OWNER || user.role === Role.PLATFORM_ADMIN) return
+  if (!device.organizationId && user.organizationId) return
+  if (user.organizationId !== device.organizationId) {
+    throw new AuthorizationError("You cannot manage a device outside your organization.")
+  }
+  if (user.propertyIds?.length && (!device.propertyId || !user.propertyIds.includes(device.propertyId))) {
+    throw new AuthorizationError("You cannot manage a device outside your properties.")
+  }
 }
 
 async function getKioskContext(input: ClockRequest) {

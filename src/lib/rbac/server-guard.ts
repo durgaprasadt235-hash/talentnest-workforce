@@ -57,6 +57,18 @@ export function requireServerPermission(
   return requirePermission(request, permission)
 }
 
+export async function requireClerkPermission(
+  permission: Permission,
+): Promise<CurrentUser> {
+  const user = await resolveClerkCurrentUser()
+
+  if (!hasPermission(user, permission)) {
+    throw new AuthorizationError("You do not have permission for this action.")
+  }
+
+  return user
+}
+
 async function requirePermission(
   request: Request,
   permission: Permission,

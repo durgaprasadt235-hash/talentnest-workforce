@@ -1,14 +1,14 @@
 import { listDevices, listDeviceOptions } from "@/src/lib/attendance/service"
 import { errorResponse } from "@/src/lib/http"
 import { Permission } from "@/src/lib/rbac/permissions"
-import { requireServerPermission } from "@/src/lib/rbac/server-guard"
+import { requireClerkPermission } from "@/src/lib/rbac/server-guard"
 
-export async function GET(request: Request) {
+export async function GET() {
   try {
-    await requireServerPermission(request, Permission.MANAGE_PROPERTIES)
+    const user = await requireClerkPermission(Permission.VIEW_DEVICES)
     const [devices, options] = await Promise.all([
-      listDevices(),
-      listDeviceOptions(),
+      listDevices(user),
+      listDeviceOptions(user),
     ])
     return Response.json({ devices, ...options })
   } catch (error) {
