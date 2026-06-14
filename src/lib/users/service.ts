@@ -139,7 +139,12 @@ export async function setUserStatus(id: string, status: RecordStatus, actor: Cur
 
 function userScope(actor: CurrentUser): Prisma.UserWhereInput | undefined {
   if (actor.role === Role.PLATFORM_OWNER || actor.role === Role.PLATFORM_ADMIN) return undefined
-  if (actor.organizationId) return { organizationId: actor.organizationId }
+  if (actor.organizationId) {
+    return {
+      organizationId: actor.organizationId,
+      role: { notIn: platformRoles },
+    }
+  }
   throw new AuthorizationError("You do not have permission to view users.")
 }
 

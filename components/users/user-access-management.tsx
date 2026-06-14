@@ -79,6 +79,7 @@ const emptyForm: UserForm = {
 
 const selectClass =
   "h-10 w-full rounded-lg border bg-background px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+const platformRoles: RoleType[] = [Role.PLATFORM_OWNER, Role.PLATFORM_ADMIN]
 
 export function UserAccessManagement() {
   const { currentUser } = useCurrentUser()
@@ -124,6 +125,10 @@ export function UserAccessManagement() {
   const isPropertyManager = form.role === Role.PROPERTY_MANAGER
   const isStaffingRole =
     form.role === Role.STAFFING_ADMIN || form.role === Role.STAFFING_BILLING
+  const isPlatformViewer =
+    currentUser.role === Role.PLATFORM_OWNER || currentUser.role === Role.PLATFORM_ADMIN
+  const platformUsers = data.users.filter((user) => platformRoles.includes(user.role))
+  const clientUsers = data.users.filter((user) => !platformRoles.includes(user.role))
 
   function startCreate() {
     setEditingId(null)
@@ -223,66 +228,32 @@ export function UserAccessManagement() {
         </p>
       )}
 
-      <Card>
-        <CardHeader>
-          <p className="font-semibold">Access directory</p>
-          <p className="text-sm text-muted-foreground">{data.users.length} users in your scope</p>
-        </CardHeader>
-        <CardContent className="p-0">
-          <Table className="min-w-[1250px]">
-            <thead>
-              <tr>
-                <TableHead>Name</TableHead>
-                <TableHead>Email</TableHead>
-                <TableHead>Role</TableHead>
-                <TableHead>Organization</TableHead>
-                <TableHead>Assigned properties</TableHead>
-                <TableHead>Staffing company</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Clerk</TableHead>
-                <TableHead>Created</TableHead>
-                <TableHead>Actions</TableHead>
-              </tr>
-            </thead>
-            <tbody>
-              {data.users.map((user) => (
-                <tr key={user.id}>
-                  <TableCell className="font-medium">{user.firstName} {user.lastName}</TableCell>
-                  <TableCell>{user.email}</TableCell>
-                  <TableCell><Badge>{ROLE_LABELS[user.role]}</Badge></TableCell>
-                  <TableCell>{user.organization?.name ?? "TalentNest Technologies"}</TableCell>
-                  <TableCell>{user.properties.map((property) => property.name).join(", ") || "—"}</TableCell>
-                  <TableCell>{user.staffingCompany?.displayName ?? "—"}</TableCell>
-                  <TableCell>
-                    <Badge className={user.status === "ACTIVE" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : ""}>
-                      {user.status}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>{user.clerkLinked ? "Linked" : "Unlinked"}</TableCell>
-                  <TableCell>{new Intl.DateTimeFormat("en-US", { dateStyle: "medium" }).format(new Date(user.createdAt))}</TableCell>
-                  <TableCell>
-                    {user.canManage ? (
-                      <div className="flex gap-1">
-                        <Button variant="ghost" size="icon-sm" onClick={() => startEdit(user)}>
-                          <Pencil className="size-4" />
-                          <span className="sr-only">Edit {user.firstName}</span>
-                        </Button>
-                        <Button variant="ghost" size="icon-sm" onClick={() => changeStatus(user)}>
-                          {user.status === "ACTIVE" ? <UserMinus className="size-4" /> : <RotateCcw className="size-4" />}
-                          <span className="sr-only">{user.status === "ACTIVE" ? "Deactivate" : "Reactivate"} {user.firstName}</span>
-                        </Button>
-                      </div>
-                    ) : "—"}
-                  </TableCell>
-                </tr>
-              ))}
-              {!data.users.length && (
-                <tr><TableCell colSpan={10} className="py-10 text-center text-muted-foreground">No users found.</TableCell></tr>
-              )}
-            </tbody>
-          </Table>
-        </CardContent>
-      </Card>
+      {isPlatformViewer ? (
+        <>
+          <UserDirectory
+            title="TalentNest Platform Team"
+            description="Platform owners and platform administrators"
+            users={platformUsers}
+            startEdit={startEdit}
+            changeStatus={changeStatus}
+          />
+          <UserDirectory
+            title="Client Organization Users"
+            description="Users assigned to customer organizations and staffing companies"
+            users={clientUsers}
+            startEdit={startEdit}
+            changeStatus={changeStatus}
+          />
+        </>
+      ) : (
+        <UserDirectory
+          title="Organization Users"
+          description="Users assigned to your organization"
+          users={data.users}
+          startEdit={startEdit}
+          changeStatus={changeStatus}
+        />
+      )}
 
       <Sheet open={open} onOpenChange={setOpen}>
         <SheetContent className="overflow-y-auto sm:max-w-xl">
@@ -346,6 +317,81 @@ export function UserAccessManagement() {
       </Sheet>
     </div>
   )
+}
+
+function UserDirectory({
+  title,
+  description,
+  users,
+  startEdit,
+  changeStatus,
+}: {
+  title: string
+  description: string
+  users: UserRow[]
+  startEdit: (user: UserRow) => void
+  changeStatus: (user: UserRow) => Promise<void>
+}) {
+  return <Card>
+    <CardHeader>
+      <p className="font-semibold">{title}</p>
+      <p className="text-sm text-muted-foreground">{description} · {users.length} users</p>
+    </CardHeader>
+    <CardContent className="p-0">
+      <Table className="min-w-[1250px]">
+        <thead>
+          <tr>
+            <TableHead>Name</TableHead>
+            <TableHead>Email</TableHead>
+            <TableHead>Role</TableHead>
+            <TableHead>Organization</TableHead>
+            <TableHead>Assigned properties</TableHead>
+            <TableHead>Staffing company</TableHead>
+            <TableHead>Status</TableHead>
+            <TableHead>Clerk</TableHead>
+            <TableHead>Created</TableHead>
+            <TableHead>Actions</TableHead>
+          </tr>
+        </thead>
+        <tbody>
+          {users.map((user) => (
+            <tr key={user.id}>
+              <TableCell className="font-medium">{user.firstName} {user.lastName}</TableCell>
+              <TableCell>{user.email}</TableCell>
+              <TableCell><Badge>{ROLE_LABELS[user.role]}</Badge></TableCell>
+              <TableCell>{user.organization?.name ?? "TalentNest Technologies"}</TableCell>
+              <TableCell>{user.properties.map((property) => property.name).join(", ") || "—"}</TableCell>
+              <TableCell>{user.staffingCompany?.displayName ?? "—"}</TableCell>
+              <TableCell>
+                <Badge className={user.status === "ACTIVE" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : ""}>
+                  {user.status}
+                </Badge>
+              </TableCell>
+              <TableCell>{user.clerkLinked ? "Linked" : "Unlinked"}</TableCell>
+              <TableCell>{new Intl.DateTimeFormat("en-US", { dateStyle: "medium" }).format(new Date(user.createdAt))}</TableCell>
+              <TableCell>
+                {user.canManage ? (
+                  <div className="flex gap-1">
+                    <Button variant="ghost" size="icon-sm" onClick={() => startEdit(user)}>
+                      <Pencil className="size-4" />
+                      <span className="sr-only">Edit {user.firstName}</span>
+                    </Button>
+                    <Button variant="ghost" size="icon-sm" onClick={() => void changeStatus(user)}>
+                      {user.status === "ACTIVE" ? <UserMinus className="size-4" /> : <RotateCcw className="size-4" />}
+                      <span className="sr-only">{user.status === "ACTIVE" ? "Deactivate" : "Reactivate"} {user.firstName}</span>
+                    </Button>
+                  </div>
+                ) : "—"}
+              </TableCell>
+            </tr>
+          ))}
+          {!users.length && (
+            <tr><TableCell colSpan={10} className="py-10 text-center text-muted-foreground">No users found.</TableCell></tr>
+          )}
+        </tbody>
+      </Table>
+    </CardContent>
+  </Card>
 }
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
