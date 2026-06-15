@@ -87,6 +87,12 @@ const roleNavigation: Record<RoleType, NavSection[]> = {
     { label: "Finance", items: [item.invoices, item.payments] },
     { label: "Settings", items: [item.users, item.auditLogs] },
   ],
+  [Role.REGIONAL_MANAGER]: [
+    { items: [item.dashboard] },
+    { label: "Organization", items: [item.properties, item.departments] },
+    { label: "Workforce", items: [item.employees] },
+    { label: "Operations", items: [item.schedules, item.attendance, item.kiosk, item.weeklyAttendance, item.timesheets] },
+  ],
   [Role.CORPORATE_ADMIN]: [
     { items: [item.dashboard] },
     { label: "Organization", items: [item.legalEntities, item.properties, item.departments] },
@@ -104,9 +110,32 @@ const roleNavigation: Record<RoleType, NavSection[]> = {
     { items: [item.dashboard] },
     { label: "Finance", items: [item.weeklyAttendance, item.invoices, item.payments] },
   ],
+  [Role.FINANCE]: [
+    { items: [item.dashboard] },
+    { label: "Finance", items: [item.weeklyAttendance, item.invoices, item.payments] },
+  ],
+  [Role.HR]: [
+    { items: [item.dashboard] },
+    { label: "Workforce", items: [item.employees] },
+    { label: "Settings", items: [item.users] },
+  ],
   [Role.STAFFING_ADMIN]: [
     { items: [item.dashboard] },
     { label: "Workforce", items: [item.employees, item.weeklyAttendance, item.timesheets] },
+    { label: "Finance", items: [item.invoices, item.payments] },
+  ],
+  [Role.STAFFING_OWNER]: [
+    { items: [item.dashboard] },
+    { label: "Workforce", items: [item.employees, item.weeklyAttendance, item.timesheets] },
+    { label: "Finance", items: [item.invoices, item.payments] },
+  ],
+  [Role.RECRUITER]: [
+    { items: [item.dashboard] },
+    { label: "Workforce", items: [item.employees] },
+  ],
+  [Role.ACCOUNT_MANAGER]: [
+    { items: [item.dashboard] },
+    { label: "Workforce", items: [item.employees, item.timesheets] },
     { label: "Finance", items: [item.invoices, item.payments] },
   ],
   [Role.STAFFING_BILLING]: [
@@ -117,6 +146,10 @@ const roleNavigation: Record<RoleType, NavSection[]> = {
     { items: [item.dashboard] },
     { label: "Workforce", items: [item.attendance, item.schedules] },
   ],
+  [Role.FRONT_DESK]: [{ items: [item.dashboard, item.attendance, item.schedules] }],
+  [Role.HOUSEKEEPING]: [{ items: [item.dashboard, item.attendance, item.schedules] }],
+  [Role.MAINTENANCE]: [{ items: [item.dashboard, item.attendance, item.schedules] }],
+  [Role.NIGHT_AUDITOR]: [{ items: [item.dashboard, item.attendance, item.schedules] }],
 }
 
 export function AppSidebar({ onNavigate }: { onNavigate?: () => void }) {

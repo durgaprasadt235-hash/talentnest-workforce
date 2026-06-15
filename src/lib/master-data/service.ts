@@ -13,15 +13,16 @@ const organizationSelect = {
   subscription: true,
   featureOverride: true,
   users: {
-    where: { role: "ORGANIZATION_OWNER" },
-    select: { id: true, firstName: true, lastName: true, email: true, clerkUserId: true },
+    where: { role: { notIn: ["PLATFORM_OWNER", "PLATFORM_ADMIN"] } },
+    select: { id: true, firstName: true, lastName: true, email: true, clerkUserId: true, role: true },
     orderBy: { createdAt: "asc" },
-    take: 1,
   },
   invitations: {
-    select: { id: true, email: true, status: true, invitedAt: true, expiresAt: true },
+    select: {
+      id: true, email: true, status: true, invitedAt: true, sentAt: true,
+      expiresAt: true, lastError: true,
+    },
     orderBy: { invitedAt: "desc" },
-    take: 1,
   },
   _count: { select: { legalEntities: true, properties: true } },
 } satisfies Prisma.OrganizationSelect
@@ -63,6 +64,33 @@ export async function setOrganizationStatus(id: string, status: RecordStatus) {
   const item = await prisma.organization.update({ where: { id }, data: { status }, select: organizationSelect })
   await audit(status === RecordStatus.ACTIVE ? "REACTIVATE_ORGANIZATION" : "DEACTIVATE_ORGANIZATION", "Organization", item.id, item.id)
   return item
+}
+
+export async function assignOrganizationOwner(
+  organizationId: string,
+  userId: string,
+  actor: CurrentUser,
+) {
+  if (actor.role !== Role.PLATFORM_OWNER) {
+    throw new Error("Only the platform owner can assign organization owners.")
+  }
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true, organizationId: true },
+  })
+  if (!user || user.organizationId !== organizationId) {
+    throw new Error("User is not assigned to this organization.")
+  }
+  await prisma.user.updateMany({
+    where: { organizationId, role: Role.ORGANIZATION_OWNER, id: { not: userId } },
+    data: { role: Role.CORPORATE_ADMIN },
+  })
+  const owner = await prisma.user.update({
+    where: { id: userId },
+    data: { role: Role.ORGANIZATION_OWNER },
+  })
+  await audit("ASSIGN_ORGANIZATION_OWNER", "User", owner.id, organizationId)
+  return owner
 }
 
 export async function listProperties() {

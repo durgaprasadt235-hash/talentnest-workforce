@@ -72,6 +72,12 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     Permission.MANAGE_DEVICES,
     Permission.MANAGE_CORPORATE_WEEKLY_ATTENDANCE,
   ],
+  [Role.REGIONAL_MANAGER]: [
+    Permission.VIEW_PROPERTIES, Permission.VIEW_DEPARTMENTS, Permission.VIEW_EMPLOYEES,
+    Permission.MANAGE_EMPLOYEES, Permission.VIEW_SCHEDULES, Permission.MANAGE_SCHEDULES,
+    Permission.VIEW_ATTENDANCE, Permission.MANAGE_ATTENDANCE, Permission.VIEW_WEEKLY_ATTENDANCE,
+    Permission.VIEW_TIMESHEETS, Permission.VIEW_USERS,
+  ],
   [Role.CORPORATE_ADMIN]: [
     Permission.VIEW_ORGANIZATION,
     Permission.MANAGE_ORGANIZATION,
@@ -101,6 +107,14 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     Permission.VIEW_WEEKLY_ATTENDANCE,
     Permission.MANAGE_WEEKLY_ATTENDANCE_PAYABLES,
   ],
+  [Role.FINANCE]: [
+    Permission.VIEW_INVOICES, Permission.VIEW_PAYMENTS, Permission.APPROVE_PAYMENTS,
+    Permission.VIEW_WEEKLY_ATTENDANCE, Permission.MANAGE_WEEKLY_ATTENDANCE_PAYABLES,
+  ],
+  [Role.HR]: [
+    Permission.VIEW_EMPLOYEES, Permission.MANAGE_EMPLOYEES, Permission.VIEW_USERS,
+    Permission.MANAGE_USERS, Permission.VIEW_DEPARTMENTS,
+  ],
   [Role.PROPERTY_MANAGER]: [
     Permission.VIEW_PROPERTIES,
     Permission.VIEW_DEPARTMENTS,
@@ -129,6 +143,15 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     Permission.VIEW_PAYMENTS,
     Permission.VIEW_WEEKLY_ATTENDANCE,
   ],
+  [Role.STAFFING_OWNER]: [
+    Permission.VIEW_EMPLOYEES, Permission.VIEW_TIMESHEETS, Permission.VIEW_INVOICES,
+    Permission.VIEW_PAYMENTS, Permission.VIEW_WEEKLY_ATTENDANCE,
+  ],
+  [Role.RECRUITER]: [Permission.VIEW_EMPLOYEES, Permission.MANAGE_EMPLOYEES],
+  [Role.ACCOUNT_MANAGER]: [
+    Permission.VIEW_EMPLOYEES, Permission.VIEW_TIMESHEETS, Permission.VIEW_INVOICES,
+    Permission.VIEW_PAYMENTS,
+  ],
   [Role.STAFFING_BILLING]: [
     Permission.VIEW_INVOICES,
     Permission.VIEW_PAYMENTS,
@@ -138,4 +161,8 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     Permission.VIEW_SCHEDULES,
     Permission.VIEW_ATTENDANCE,
   ],
+  [Role.FRONT_DESK]: [Permission.VIEW_SCHEDULES, Permission.VIEW_ATTENDANCE],
+  [Role.HOUSEKEEPING]: [Permission.VIEW_SCHEDULES, Permission.VIEW_ATTENDANCE],
+  [Role.MAINTENANCE]: [Permission.VIEW_SCHEDULES, Permission.VIEW_ATTENDANCE],
+  [Role.NIGHT_AUDITOR]: [Permission.VIEW_SCHEDULES, Permission.VIEW_ATTENDANCE],
 }

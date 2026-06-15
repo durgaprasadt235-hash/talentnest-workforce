@@ -35,7 +35,7 @@ const initialForm = {
     name: "", slug: "", legalBusinessName: "", contactName: "", contactEmail: "", contactPhone: "",
     billingAddress: "", billingCity: "", billingState: "", billingZip: "",
   },
-  owner: { firstName: "", lastName: "", email: "" },
+  owner: { firstName: "", lastName: "", email: "", temporaryPassword: "" },
   subscriptionOption: "trial-30",
   features: {
     canUseScheduling: true, canUseAttendance: false, canUseTimesheets: true, canUseInvoices: true,
@@ -55,7 +55,7 @@ export function OrganizationOnboarding() {
   const [result, setResult] = useState<{
     organizationName: string
     ownerEmail: string
-    invitationStatus: string
+    invitationStatus: string | null
     emailSent: boolean
     emailMessage: string
   } | null>(null)
@@ -122,7 +122,7 @@ export function OrganizationOnboarding() {
               <div className="rounded-xl border bg-muted/30 p-4">
                 <p className="text-sm font-medium">Organization Owner</p>
                 <p className="mt-1 text-sm text-muted-foreground">{result.ownerEmail}</p>
-                <p className="mt-4 text-sm font-medium">{result.emailSent ? "Invitation Sent" : "Invitation Created"}</p>
+                <p className="mt-4 text-sm font-medium">{result.invitationStatus ? (result.emailSent ? "Invitation Sent" : "Email Delivery Failed") : "Active"}</p>
                 <p className="mt-1 text-sm text-muted-foreground">{result.emailMessage}</p>
               </div>
               <Button onClick={() => setOpen(false)}>Done</Button>
@@ -176,7 +176,8 @@ function OwnerStep({ form, update }: { form: typeof initialForm.owner; update: (
     <Field label="First name"><Input required value={form.firstName} onChange={(event) => update("firstName", event.target.value)} /></Field>
     <Field label="Last name"><Input required value={form.lastName} onChange={(event) => update("lastName", event.target.value)} /></Field>
     <div className="md:col-span-2"><Field label="Email"><Input required type="email" value={form.email} onChange={(event) => update("email", event.target.value)} /></Field></div>
-    <p className="text-sm text-muted-foreground md:col-span-2">An Organization Owner user will be created and an invitation email will be sent when Resend is configured.</p>
+    <div className="md:col-span-2"><Field label="Temporary password"><Input required minLength={8} type="password" value={form.temporaryPassword} onChange={(event) => update("temporaryPassword", event.target.value)} /></Field></div>
+    <p className="text-sm text-muted-foreground md:col-span-2">The Organization Owner account is created immediately and must change this password on first login.</p>
   </div>
 }
 

@@ -64,6 +64,10 @@ export async function requireClerkPermission(
 ): Promise<CurrentUser> {
   const user = await resolveClerkCurrentUser()
 
+  if (user.mustChangePassword) {
+    throw new AuthorizationError("Password change required.")
+  }
+
   if (!hasPermission(user, permission)) {
     throw new AuthorizationError("You do not have permission for this action.")
   }
@@ -79,6 +83,10 @@ async function requirePermission(
   permission: Permission,
 ): Promise<CurrentUser> {
   const user = await getServerCurrentUser(request)
+
+  if (user.mustChangePassword) {
+    throw new AuthorizationError("Password change required.")
+  }
 
   if (!hasPermission(user, permission)) {
     throw new AuthorizationError("You do not have permission for this action.")

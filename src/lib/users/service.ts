@@ -1,4 +1,6 @@
 import { Prisma, RecordStatus } from "@prisma/client"
+import { clerkClient } from "@clerk/nextjs/server"
+import { hash } from "bcryptjs"
 
 import { createAuditLog } from "@/src/lib/audit"
 import { prisma } from "@/src/lib/prisma"
@@ -8,11 +10,19 @@ import { Role, ROLES, type Role as RoleType } from "@/src/lib/rbac/roles"
 import type { UserInput } from "@/src/lib/users/validation"
 
 const platformRoles: RoleType[] = [Role.PLATFORM_OWNER, Role.PLATFORM_ADMIN]
-const staffingRoles: RoleType[] = [Role.STAFFING_ADMIN, Role.STAFFING_BILLING]
+const staffingRoles: RoleType[] = [
+  Role.STAFFING_ADMIN, Role.STAFFING_BILLING, Role.STAFFING_OWNER,
+  Role.RECRUITER, Role.ACCOUNT_MANAGER,
+]
+const propertyRoles: RoleType[] = [
+  Role.PROPERTY_MANAGER, Role.FRONT_DESK, Role.HOUSEKEEPING,
+  Role.MAINTENANCE, Role.NIGHT_AUDITOR,
+]
 
 const userInclude = {
   organization: { select: { id: true, name: true } },
   staffingCompany: { select: { id: true, displayName: true } },
+  department: { select: { id: true, name: true } },
   propertyAccesses: {
     select: { property: { select: { id: true, name: true } } },
     orderBy: { property: { name: "asc" } },
@@ -23,7 +33,7 @@ export async function listUsersAndAccess(actor: CurrentUser) {
   assertCanViewUsers(actor)
   const scope = userScope(actor)
 
-  const [users, organizations, properties, staffingCompanies] = await Promise.all([
+  const [users, organizations, properties, departments, staffingCompanies] = await Promise.all([
     prisma.user.findMany({
       where: scope,
       include: userInclude,
@@ -39,6 +49,11 @@ export async function listUsersAndAccess(actor: CurrentUser) {
       select: { id: true, name: true, organizationId: true },
       orderBy: { name: "asc" },
     }),
+    prisma.department.findMany({
+      where: actor.organizationId ? { organizationId: actor.organizationId } : undefined,
+      select: { id: true, name: true, organizationId: true, propertyId: true },
+      orderBy: { name: "asc" },
+    }),
     prisma.staffingCompany.findMany({
       where: actor.organizationId ? { organizationId: actor.organizationId } : undefined,
       select: { id: true, displayName: true, organizationId: true },
@@ -49,6 +64,7 @@ export async function listUsersAndAccess(actor: CurrentUser) {
   return {
     users: users.map((user) => ({
       ...user,
+      temporaryPassword: undefined,
       propertyIds: user.propertyAccesses.map((access) => access.property.id),
       properties: user.propertyAccesses.map((access) => access.property),
       clerkLinked: Boolean(user.clerkUserId),
@@ -58,6 +74,7 @@ export async function listUsersAndAccess(actor: CurrentUser) {
     options: {
       organizations,
       properties,
+      departments,
       staffingCompanies,
       roles: manageableRoles(actor),
     },
@@ -65,30 +82,49 @@ export async function listUsersAndAccess(actor: CurrentUser) {
 }
 
 export async function createUser(input: UserInput, actor: CurrentUser) {
+  if (!input.temporaryPassword) throw new Error("Temporary password is required.")
+  const plaintextTemporaryPassword = input.temporaryPassword
   assertCanAssignRole(actor, input.role)
   const normalized = await validateAssignment(input, actor)
-
-  const user = await prisma.$transaction(async (tx) => {
-    const created = await tx.user.create({
-      data: {
-        firstName: normalized.firstName,
-        lastName: normalized.lastName,
-        email: normalized.email,
-        role: normalized.role,
-        organizationId: normalized.organizationId,
-        staffingCompanyId: normalized.staffingCompanyId,
-        status: normalized.status,
-        propertyAccesses: {
-          create: normalized.propertyIds.map((propertyId) => ({ propertyId })),
-        },
-      },
-      include: userInclude,
-    })
-    return created
+  const client = await clerkClient()
+  const clerkUser = await client.users.createUser({
+    emailAddress: [normalized.email],
+    password: plaintextTemporaryPassword,
+    firstName: normalized.firstName,
+    lastName: normalized.lastName,
   })
+  const temporaryPassword = await hash(plaintextTemporaryPassword, 12)
+
+  let user
+  try {
+    user = await prisma.$transaction(async (tx) => {
+      return tx.user.create({
+        data: {
+          clerkUserId: clerkUser.id,
+          firstName: normalized.firstName,
+          lastName: normalized.lastName,
+          email: normalized.email,
+          role: normalized.role,
+          organizationId: normalized.organizationId,
+          staffingCompanyId: normalized.staffingCompanyId,
+          departmentId: normalized.departmentId,
+          status: RecordStatus.ACTIVE,
+          temporaryPassword,
+          mustChangePassword: true,
+          propertyAccesses: {
+            create: normalized.propertyIds.map((propertyId) => ({ propertyId })),
+          },
+        },
+        include: userInclude,
+      })
+    })
+  } catch (error) {
+    await client.users.deleteUser(clerkUser.id).catch(() => undefined)
+    throw error
+  }
 
   await auditUser("CREATE_USER", user.id, actor, user.organizationId)
-  return user
+  return { ...user, temporaryPassword: undefined }
 }
 
 export async function updateUser(id: string, input: UserInput, actor: CurrentUser) {
@@ -108,6 +144,7 @@ export async function updateUser(id: string, input: UserInput, actor: CurrentUse
         role: normalized.role,
         organizationId: normalized.organizationId,
         staffingCompanyId: normalized.staffingCompanyId,
+        departmentId: normalized.departmentId,
         status: normalized.status,
         propertyAccesses: {
           create: normalized.propertyIds.map((propertyId) => ({ propertyId })),
@@ -196,7 +233,7 @@ async function validateAssignment(input: UserInput, actor: CurrentUser): Promise
   const isPlatform = platformRoles.includes(input.role)
 
   if (isPlatform) {
-    return { ...input, organizationId: null, staffingCompanyId: null, propertyIds: [] }
+    return { ...input, organizationId: null, staffingCompanyId: null, departmentId: null, propertyIds: [] }
   }
   if (!organizationId) throw new Error("Organization is required for this role.")
 
@@ -214,13 +251,27 @@ async function validateAssignment(input: UserInput, actor: CurrentUser): Promise
     }
   }
 
-  const propertyIds = input.role === Role.PROPERTY_MANAGER ? [...new Set(input.propertyIds)] : []
+  const propertyIds = propertyRoles.includes(input.role) ? [...new Set(input.propertyIds)] : []
   if (propertyIds.length) {
     const count = await prisma.property.count({ where: { id: { in: propertyIds }, organizationId } })
     if (count !== propertyIds.length) throw new Error("One or more properties do not belong to the selected organization.")
   }
 
-  return { ...input, organizationId, staffingCompanyId, propertyIds }
+  const departmentId = input.departmentId ?? null
+  if (departmentId) {
+    const department = await prisma.department.findUnique({
+      where: { id: departmentId },
+      select: { organizationId: true, propertyId: true },
+    })
+    if (!department || department.organizationId !== organizationId) {
+      throw new Error("Department does not belong to the selected organization.")
+    }
+    if (propertyIds.length && !propertyIds.includes(department.propertyId)) {
+      throw new Error("Department does not belong to an assigned property.")
+    }
+  }
+
+  return { ...input, organizationId, staffingCompanyId, departmentId, propertyIds }
 }
 
 async function getTarget(id: string) {

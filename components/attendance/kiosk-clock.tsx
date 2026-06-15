@@ -62,6 +62,7 @@ export function KioskClock() {
   const sessionPinRef = useRef("")
   const [device, setDevice] = useState<DeviceInfo | null>(null)
   const [pin, setPin] = useState("")
+  const [employeeNumber, setEmployeeNumber] = useState("")
   const [failedAttempts, setFailedAttempts] = useState(0)
   const [lockedUntil, setLockedUntil] = useState(0)
   const [session, setSession] = useState<EmployeeSession | null>(null)
@@ -136,12 +137,13 @@ export function KioskClock() {
       const response = await fetch("/api/attendance/kiosk/verify", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ deviceCode: device.deviceCode, pin }),
+      body: JSON.stringify({ deviceCode: device.deviceCode, employeeNumber: employeeNumber || undefined, pin }),
       })
       const data = await response.json()
       if (!response.ok) throw new Error(data.error)
       sessionPinRef.current = pin
       setPin("")
+      setEmployeeNumber("")
       setFailedAttempts(0)
       setSession(data)
       setError(false)
@@ -262,6 +264,7 @@ export function KioskClock() {
     setSession(null)
     sessionPinRef.current = ""
     setPin("")
+    setEmployeeNumber("")
     setCorrectionOpen(false)
     setCorrectionType("MISSED_PUNCH")
     setRequestedClockInAt("")
@@ -287,11 +290,13 @@ export function KioskClock() {
             device={device}
             now={now}
             pin={pin}
+            employeeNumber={employeeNumber}
             lockedSeconds={Math.max(0, Math.ceil((lockedUntil - now.getTime()) / 1000))}
             busy={busy}
             message={message}
             error={error}
             onPin={(value) => setPin(value.replace(/\D/g, "").slice(0, 4))}
+            onEmployeeNumber={setEmployeeNumber}
             onEnter={verifyEmployee}
           />
         ) : (
@@ -321,15 +326,17 @@ export function KioskClock() {
   )
 }
 
-function ReadyScreen({ device, now, pin, lockedSeconds, busy, message, error, onPin, onEnter }: {
+function ReadyScreen({ device, now, pin, employeeNumber, lockedSeconds, busy, message, error, onPin, onEmployeeNumber, onEnter }: {
   device: DeviceInfo
   now: Date
   pin: string
+  employeeNumber: string
   lockedSeconds: number
   busy: boolean
   message: string
   error: boolean
   onPin: (value: string) => void
+  onEmployeeNumber: (value: string) => void
   onEnter: () => void
 }) {
   return (
@@ -340,6 +347,7 @@ function ReadyScreen({ device, now, pin, lockedSeconds, busy, message, error, on
           <h1 className="mt-1 text-3xl font-semibold">{device.property?.name}</h1>
           <p className="mt-3 text-lg">{now.toLocaleDateString()} · {now.toLocaleTimeString()}</p>
         </div>
+        <Input value={employeeNumber} onChange={(event) => onEmployeeNumber(event.target.value)} placeholder="Employee ID" autoComplete="off" className="h-12 text-center text-lg" disabled={busy || lockedSeconds > 0} />
         <Input value={pin} onChange={(event) => onPin(event.target.value)} placeholder="4-digit PIN" type="password" inputMode="numeric" autoComplete="off" maxLength={4} className="h-16 text-center text-2xl tracking-[0.5em]" onKeyDown={(event) => event.key === "Enter" && onEnter()} disabled={busy || lockedSeconds > 0} />
         <NumericKeypad pin={pin} disabled={busy || lockedSeconds > 0} onPin={onPin} />
         <Button disabled={busy || pin.length !== 4 || lockedSeconds > 0} className="h-16 w-full text-lg" onClick={onEnter}><UserRound /> Enter</Button>

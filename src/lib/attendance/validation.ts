@@ -32,6 +32,7 @@ export const deviceRequestSchema = z.object({
 
 export const kioskEmployeeVerificationSchema = z.object({
   deviceCode: trimmedString.max(100),
+  employeeNumber: trimmedString.max(50).optional(),
   pin: z.string().regex(/^\d{4}$/),
 })
 

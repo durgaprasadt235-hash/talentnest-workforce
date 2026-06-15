@@ -36,6 +36,7 @@ enum OrganizationSubscriptionStatus {
 
 enum OrganizationInvitationStatus {
   PENDING
+  SENT
   ACCEPTED
   EXPIRED
   CANCELLED
@@ -275,6 +276,8 @@ model OrganizationInvitation {
   status         OrganizationInvitationStatus @default(PENDING)
   token          String                       @unique
   invitedAt      DateTime                     @default(now())
+  sentAt         DateTime?
+  lastError      String?
   acceptedAt     DateTime?
   expiresAt      DateTime
 
@@ -357,6 +360,7 @@ model Department {
   organization          Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   property              Property               @relation(fields: [propertyId], references: [id], onDelete: Cascade)
   employees             Employee[]
+  users                 User[]
   shifts                Shift[]
   attendanceRecords     AttendanceRecord[]
   weeklyAttendanceLines WeeklyAttendanceLine[]
@@ -406,16 +410,20 @@ model User {
   clerkUserId       String?      @unique
   organizationId    String?
   staffingCompanyId String?
+  departmentId      String?
   email             String       @unique
   firstName         String
   lastName          String
   role              String
   status            RecordStatus @default(ACTIVE)
+  temporaryPassword String?
+  mustChangePassword Boolean      @default(false)
   createdAt         DateTime     @default(now())
   updatedAt         DateTime     @updatedAt
 
   organization                    Organization?           @relation(fields: [organizationId], references: [id], onDelete: SetNull)
   staffingCompany                 StaffingCompany?        @relation(fields: [staffingCompanyId], references: [id], onDelete: SetNull)
+  department                      Department?              @relation(fields: [departmentId], references: [id], onDelete: SetNull)
   propertyAccesses                UserPropertyAccess[]
   requestedExceptions             AttendanceException[]   @relation("RequestedBy")
   approvedExceptions              AttendanceException[]   @relation("ApprovedBy")
@@ -425,6 +433,14 @@ model User {
 
   @@index([organizationId])
   @@index([staffingCompanyId])
+  @@index([departmentId])
+}
+
+model SystemSetting {
+  id                String   @id @default("system")
+  enableInvitations Boolean  @default(false)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 }
 
 model UserPropertyAccess {

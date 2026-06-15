@@ -27,6 +27,7 @@ export async function resolveClerkCurrentUser(): Promise<CurrentUser> {
     include: {
       organization: { select: { name: true } },
       staffingCompany: { select: { displayName: true } },
+      department: { select: { id: true } },
       propertyAccesses: { select: { propertyId: true } },
     },
   })
@@ -37,6 +38,7 @@ export async function resolveClerkCurrentUser(): Promise<CurrentUser> {
       include: {
         organization: { select: { name: true } },
         staffingCompany: { select: { displayName: true } },
+        department: { select: { id: true } },
         propertyAccesses: { select: { propertyId: true } },
       },
     })
@@ -52,6 +54,7 @@ export async function resolveClerkCurrentUser(): Promise<CurrentUser> {
           include: {
             organization: { select: { name: true } },
             staffingCompany: { select: { displayName: true } },
+            department: { select: { id: true } },
             propertyAccesses: { select: { propertyId: true } },
           },
         })
@@ -76,6 +79,7 @@ export async function resolveClerkCurrentUser(): Promise<CurrentUser> {
       include: {
         organization: { select: { name: true } },
         staffingCompany: { select: { displayName: true } },
+        department: { select: { id: true } },
         propertyAccesses: { select: { propertyId: true } },
       },
     })
@@ -90,7 +94,12 @@ export async function resolveClerkCurrentUser(): Promise<CurrentUser> {
       where: {
         organizationId: user.organizationId,
         email: { equals: user.email, mode: "insensitive" },
-        status: OrganizationInvitationStatus.PENDING,
+        status: {
+          in: [
+            OrganizationInvitationStatus.PENDING,
+            OrganizationInvitationStatus.SENT,
+          ],
+        },
         expiresAt: { gte: new Date() },
       },
       data: {
@@ -128,6 +137,8 @@ export async function resolveClerkCurrentUser(): Promise<CurrentUser> {
         ? user.propertyAccesses.map((access) => access.propertyId)
         : organizationProperties.map((property) => property.id),
     staffingCompanyId: user.staffingCompanyId ?? undefined,
+    departmentId: user.departmentId ?? undefined,
+    mustChangePassword: user.mustChangePassword,
     companyName:
       role === Role.PLATFORM_OWNER || role === Role.PLATFORM_ADMIN
         ? "TalentNest Technologies"

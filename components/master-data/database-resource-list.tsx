@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react"
 import { Eye, Pencil, Plus, RotateCcw, UserMinus } from "lucide-react"
+import Link from "next/link"
 
 import { useCurrentUser } from "@/components/rbac/current-user-provider"
 import { Badge } from "@/components/ui/badge"
@@ -49,8 +50,16 @@ type Item = {
     trialEndsAt: string | null
   } | null
   featureOverride?: Record<string, boolean | string | null> | null
-  users?: Array<{ id: string; firstName: string; lastName: string; email: string; clerkUserId: string | null }>
-  invitations?: Array<{ id: string; email: string; status: string; invitedAt: string; expiresAt: string }>
+  users?: Array<{ id: string; firstName: string; lastName: string; email: string; clerkUserId: string | null; role: string }>
+  invitations?: Array<{
+    id: string
+    email: string
+    status: string
+    invitedAt: string
+    sentAt: string | null
+    expiresAt: string
+    lastError: string | null
+  }>
   _count?: { legalEntities: number; properties: number }
 }
 type Option = { id: string; name: string; organizationId?: string }
@@ -340,8 +349,12 @@ function OrganizationDetails({ item }: { item: Item }) {
     ["canUseKiosk", "Kiosk"], ["canUseStaffing", "Staffing"],
   ] as const
   const enabled = featureNames.filter(([key]) => item.featureOverride?.[key] === true).map(([, label]) => label)
-  const owner = item.users?.[0]
-  const invitation = item.invitations?.[0]
+  const owner = item.users?.find((user) => user.role === Role.ORGANIZATION_OWNER)
+  const [invitationHistory, setInvitationHistory] = useState(item.invitations ?? [])
+  const invitation = invitationHistory.find(
+    (candidate) => candidate.status !== "ACCEPTED" && candidate.status !== "CANCELLED",
+  )
+  const canResendInvitation = currentUser.role === Role.PLATFORM_OWNER
   const [features, setFeatures] = useState(() => Object.fromEntries(
     featureNames.map(([key]) => [key, item.featureOverride?.[key] === true]),
   ) as Record<(typeof featureNames)[number][0], boolean>)
@@ -351,6 +364,8 @@ function OrganizationDetails({ item }: { item: Item }) {
   const [featureMessage, setFeatureMessage] = useState("")
   const [invitationMessage, setInvitationMessage] = useState("")
   const [resendingInvitation, setResendingInvitation] = useState(false)
+  const [ownerCandidateId, setOwnerCandidateId] = useState("")
+  const [ownerMessage, setOwnerMessage] = useState("")
 
   async function saveFeatures() {
     setFeatureMessage("")
@@ -377,12 +392,37 @@ function OrganizationDetails({ item }: { item: Item }) {
       const body = await response.json()
       if (!response.ok) throw new Error(body.error)
       setInvitationMessage(body.emailMessage)
+      setInvitationHistory((current) => current.map((historyItem) => (
+        historyItem.id === invitation.id
+          ? {
+              ...historyItem,
+              status: body.invitationStatus,
+              sentAt: body.sentAt,
+              expiresAt: body.expiresAt,
+              lastError: body.lastError,
+            }
+          : historyItem
+      )))
       window.dispatchEvent(new Event("talentnest:organizations-changed"))
     } catch (caught) {
       setInvitationMessage(caught instanceof Error ? caught.message : "Unable to resend invitation.")
     } finally {
       setResendingInvitation(false)
     }
+  }
+
+  async function assignOwner() {
+    if (!ownerCandidateId) return
+    setOwnerMessage("")
+    const response = await fetch(`/api/organizations/${item.id}/assign-owner`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json", ...mockRoleHeaders(currentUser.role) },
+      body: JSON.stringify({ userId: ownerCandidateId }),
+    })
+    const body = await response.json()
+    if (!response.ok) return setOwnerMessage(body.error)
+    setOwnerMessage("Organization owner assigned.")
+    window.dispatchEvent(new Event("talentnest:organizations-changed"))
   }
 
   return <div className="space-y-6 p-4">
@@ -397,20 +437,47 @@ function OrganizationDetails({ item }: { item: Item }) {
       {featureMessage && <p className="text-sm text-muted-foreground">{featureMessage}</p>}
       <Button type="button" onClick={() => void saveFeatures()}>Save feature access</Button>
     </section>}
-    <DetailBlock title="Organization owner" lines={owner ? [`${owner.firstName} ${owner.lastName}`, owner.email, owner.clerkUserId ? "Clerk linked" : "Clerk unlinked"] : ["No organization owner"]} />
-    <section className="space-y-3 rounded-xl border p-4">
-      <h3 className="font-medium">Latest invitation</h3>
-      {invitation ? <>
-        <div className="space-y-1 text-sm text-muted-foreground">
-          <p>{invitation.email}</p>
-          <p>{invitation.status === "PENDING" ? "Invitation Sent" : invitation.status}</p>
-          <p>Expires: {new Date(invitation.expiresAt).toLocaleString()}</p>
-        </div>
-        {canEditFeatures && invitation.status !== "ACCEPTED" && invitation.status !== "CANCELLED" && <Button type="button" variant="outline" disabled={resendingInvitation} onClick={() => void resendInvitation()}>
-          <RotateCcw /> {resendingInvitation ? "Sending..." : "Resend invitation"}
+    {owner
+      ? <DetailBlock title="Organization owner" lines={[`${owner.firstName} ${owner.lastName}`, owner.email, owner.clerkUserId ? "Active" : "Inactive"]} />
+      : <section className="space-y-3 rounded-xl border p-4">
+          <h3 className="font-medium">Organization owner</h3>
+          <p className="text-sm text-muted-foreground">No owner assigned.</p>
+          {currentUser.role === Role.PLATFORM_OWNER && <>
+            <select className={selectClass} value={ownerCandidateId} onChange={(event) => setOwnerCandidateId(event.target.value)}>
+              <option value="">Select existing user</option>
+              {item.users?.filter((candidate) => candidate.role !== Role.ORGANIZATION_OWNER).map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.firstName} {candidate.lastName} · {candidate.email}</option>)}
+            </select>
+            <div className="flex flex-wrap gap-2">
+              <Button disabled={!ownerCandidateId} onClick={() => void assignOwner()}>Assign selected user</Button>
+              <Button asChild variant="outline"><Link href={`/users?organizationId=${encodeURIComponent(item.id)}&role=${Role.ORGANIZATION_OWNER}`}>Create New User</Link></Button>
+            </div>
+            {ownerMessage && <p className="text-sm text-muted-foreground">{ownerMessage}</p>}
+          </>}
+        </section>}
+    <section className="space-y-4 rounded-xl border p-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div><h3 className="font-medium">Invitation history</h3><p className="mt-1 text-sm text-muted-foreground">Organization owner invitation delivery attempts.</p></div>
+        {canResendInvitation && invitation && <Button type="button" variant="outline" disabled={resendingInvitation} onClick={() => void resendInvitation()}>
+          <RotateCcw /> {resendingInvitation ? "Sending..." : "Resend Invitation"}
         </Button>}
-        {invitationMessage && <p className="text-sm text-muted-foreground">{invitationMessage}</p>}
-      </> : <p className="text-sm text-muted-foreground">No invitation</p>}
+      </div>
+      {invitationMessage && <p className={invitationMessage === "Invitation email sent successfully." ? "text-sm text-emerald-700" : "text-sm text-destructive"}>{invitationMessage}</p>}
+      {invitationHistory.length ? <Table>
+        <thead><tr>
+          <TableHead>Email</TableHead>
+          <TableHead>Status</TableHead>
+          <TableHead>Sent At</TableHead>
+          <TableHead>Expires At</TableHead>
+          <TableHead>Last Error</TableHead>
+        </tr></thead>
+        <tbody>{invitationHistory.map((historyItem) => <tr key={historyItem.id}>
+          <TableCell>{historyItem.email}</TableCell>
+          <TableCell><Badge>{historyItem.status}</Badge></TableCell>
+          <TableCell>{historyItem.sentAt ? new Date(historyItem.sentAt).toLocaleString() : "—"}</TableCell>
+          <TableCell>{new Date(historyItem.expiresAt).toLocaleString()}</TableCell>
+          <TableCell className="max-w-52 whitespace-normal text-destructive">{historyItem.lastError ?? "—"}</TableCell>
+        </tr>)}</tbody>
+      </Table> : <p className="text-sm text-muted-foreground">No invitations</p>}
     </section>
     <DetailBlock title="Setup" lines={[`${item._count?.legalEntities ?? 0} legal entities`, `${item._count?.properties ?? 0} properties`]} />
     <DetailBlock title="Contact and billing" lines={[item.contactName ?? "", item.contactEmail ?? "", item.contactPhone ?? "", [item.billingAddress, item.billingCity, item.billingState, item.billingZip].filter(Boolean).join(", ")]} />

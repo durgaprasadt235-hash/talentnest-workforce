@@ -29,6 +29,7 @@ export const organizationOnboardingSchema = z.object({
     firstName: requiredText,
     lastName: requiredText,
     email: z.email().trim().toLowerCase(),
+    temporaryPassword: z.string().min(8).max(200),
   }),
   subscriptionOption: z.enum(onboardingSubscriptionOptions),
   features: z.object({

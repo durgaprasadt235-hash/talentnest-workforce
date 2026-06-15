@@ -65,7 +65,9 @@ export function CurrentUserProvider({ children }: { children: ReactNode }) {
           organizationId: user.organizationId,
           propertyIds: user.propertyIds,
           staffingCompanyId: user.staffingCompanyId,
+          departmentId: user.departmentId,
           companyName: user.companyName,
+          mustChangePassword: user.mustChangePassword,
           featureAccess: user.featureAccess,
         }),
       )

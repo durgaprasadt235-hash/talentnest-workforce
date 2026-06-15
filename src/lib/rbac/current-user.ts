@@ -10,7 +10,9 @@ export type CurrentUser = {
   organizationId?: string
   propertyIds?: string[]
   staffingCompanyId?: string
+  departmentId?: string
   companyName?: string
+  mustChangePassword?: boolean
   featureAccess?: OrganizationFeatureAccess
 }
 

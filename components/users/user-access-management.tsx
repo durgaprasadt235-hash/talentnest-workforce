@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react"
 import { Pencil, Plus, RotateCcw, UserMinus } from "lucide-react"
 
 import { useCurrentUser } from "@/components/rbac/current-user-provider"
@@ -32,6 +32,9 @@ type UserRow = {
   role: RoleType
   organizationId: string | null
   staffingCompanyId: string | null
+  departmentId: string | null
+  department: NamedOption | null
+  mustChangePassword: boolean
   status: Status
   createdAt: string
   organization: NamedOption | null
@@ -47,6 +50,7 @@ type UserData = {
     organizations: NamedOption[]
     properties: (NamedOption & { organizationId: string })[]
     staffingCompanies: { id: string; displayName: string; organizationId: string }[]
+    departments: (NamedOption & { organizationId: string; propertyId: string })[]
     roles: RoleType[]
   }
 }
@@ -54,8 +58,10 @@ type UserForm = {
   firstName: string
   lastName: string
   email: string
+  temporaryPassword: string
   role: RoleType
   organizationId: string
+  departmentId: string
   propertyIds: string[]
   staffingCompanyId: string
   status: Status
@@ -63,15 +69,17 @@ type UserForm = {
 
 const emptyData: UserData = {
   users: [],
-  options: { organizations: [], properties: [], staffingCompanies: [], roles: [] },
+  options: { organizations: [], properties: [], departments: [], staffingCompanies: [], roles: [] },
 }
 
 const emptyForm: UserForm = {
   firstName: "",
   lastName: "",
   email: "",
+  temporaryPassword: "",
   role: Role.EMPLOYEE,
   organizationId: "",
+  departmentId: "",
   propertyIds: [],
   staffingCompanyId: "",
   status: "ACTIVE",
@@ -80,9 +88,26 @@ const emptyForm: UserForm = {
 const selectClass =
   "h-10 w-full rounded-lg border bg-background px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
 const platformRoles: RoleType[] = [Role.PLATFORM_OWNER, Role.PLATFORM_ADMIN]
+const propertyAssignmentRoles: RoleType[] = [
+  Role.PROPERTY_MANAGER, Role.FRONT_DESK, Role.HOUSEKEEPING,
+  Role.MAINTENANCE, Role.NIGHT_AUDITOR,
+]
+const propertyEmployeeRoles: RoleType[] = [
+  Role.FRONT_DESK, Role.HOUSEKEEPING, Role.MAINTENANCE, Role.NIGHT_AUDITOR, Role.EMPLOYEE,
+]
+const staffingUserRoles: RoleType[] = [
+  Role.STAFFING_OWNER, Role.RECRUITER, Role.ACCOUNT_MANAGER, Role.STAFFING_ADMIN, Role.STAFFING_BILLING,
+]
 
-export function UserAccessManagement() {
+export function UserAccessManagement({
+  initialOrganizationId,
+  initialRole,
+}: {
+  initialOrganizationId?: string
+  initialRole?: string
+}) {
   const { currentUser } = useCurrentUser()
+  const handledAssignment = useRef(false)
   const canCreate = hasPermission(currentUser, Permission.MANAGE_USERS)
   const [data, setData] = useState<UserData>(emptyData)
   const [form, setForm] = useState<UserForm>(emptyForm)
@@ -114,21 +139,41 @@ export function UserAccessManagement() {
     load().catch((caught: Error) => setError(caught.message))
   }, [load])
 
+  useEffect(() => {
+    const organizationId = initialOrganizationId
+    const role = initialRole as RoleType | undefined
+    if (!organizationId || !role || !data.options.roles.includes(role) || handledAssignment.current) return
+    handledAssignment.current = true
+    setEditingId(null)
+    setForm({ ...emptyForm, organizationId, role })
+    setOpen(true)
+  }, [data.options.roles, initialOrganizationId, initialRole])
+
   const properties = data.options.properties.filter(
     (property) => property.organizationId === form.organizationId,
   )
   const staffingCompanies = data.options.staffingCompanies.filter(
     (company) => company.organizationId === form.organizationId,
   )
+  const departments = data.options.departments.filter(
+    (department) =>
+      department.organizationId === form.organizationId &&
+      (!form.propertyIds.length || form.propertyIds.includes(department.propertyId)),
+  )
   const isPlatformRole =
     form.role === Role.PLATFORM_OWNER || form.role === Role.PLATFORM_ADMIN
-  const isPropertyManager = form.role === Role.PROPERTY_MANAGER
+  const hasPropertyAssignment = propertyAssignmentRoles.includes(form.role)
   const isStaffingRole =
     form.role === Role.STAFFING_ADMIN || form.role === Role.STAFFING_BILLING
   const isPlatformViewer =
     currentUser.role === Role.PLATFORM_OWNER || currentUser.role === Role.PLATFORM_ADMIN
   const platformUsers = data.users.filter((user) => platformRoles.includes(user.role))
   const clientUsers = data.users.filter((user) => !platformRoles.includes(user.role))
+  const clientManagementUsers = clientUsers.filter(
+    (user) => !propertyEmployeeRoles.includes(user.role) && !staffingUserRoles.includes(user.role),
+  )
+  const propertyEmployees = clientUsers.filter((user) => propertyEmployeeRoles.includes(user.role))
+  const staffingUsers = clientUsers.filter((user) => staffingUserRoles.includes(user.role))
 
   function startCreate() {
     setEditingId(null)
@@ -143,8 +188,10 @@ export function UserAccessManagement() {
       firstName: user.firstName,
       lastName: user.lastName,
       email: user.email,
+      temporaryPassword: "",
       role: user.role,
       organizationId: user.organizationId ?? "",
+      departmentId: user.departmentId ?? "",
       propertyIds: user.propertyIds,
       staffingCompanyId: user.staffingCompanyId ?? "",
       status: user.status,
@@ -161,7 +208,7 @@ export function UserAccessManagement() {
         role === Role.PLATFORM_OWNER || role === Role.PLATFORM_ADMIN
           ? ""
           : current.organizationId,
-      propertyIds: role === Role.PROPERTY_MANAGER ? current.propertyIds : [],
+      propertyIds: propertyAssignmentRoles.includes(role) ? current.propertyIds : [],
       staffingCompanyId:
         role === Role.STAFFING_ADMIN || role === Role.STAFFING_BILLING
           ? current.staffingCompanyId
@@ -179,7 +226,9 @@ export function UserAccessManagement() {
       headers: { "content-type": "application/json", ...requestHeaders },
       body: JSON.stringify({
         ...form,
+        temporaryPassword: editingId ? undefined : form.temporaryPassword,
         organizationId: form.organizationId || null,
+        departmentId: form.departmentId || null,
         staffingCompanyId: form.staffingCompanyId || null,
       }),
     })
@@ -239,8 +288,22 @@ export function UserAccessManagement() {
           />
           <UserDirectory
             title="Client Organization Users"
-            description="Users assigned to customer organizations and staffing companies"
-            users={clientUsers}
+            description="Organization owners, regional managers, and property managers"
+            users={clientManagementUsers}
+            startEdit={startEdit}
+            changeStatus={changeStatus}
+          />
+          <UserDirectory
+            title="Property Employees"
+            description="Front desk, housekeeping, maintenance, night auditor, and employee users"
+            users={propertyEmployees}
+            startEdit={startEdit}
+            changeStatus={changeStatus}
+          />
+          <UserDirectory
+            title="Staffing Company Users"
+            description="Staffing owners, recruiters, account managers, and legacy staffing users"
+            users={staffingUsers}
             startEdit={startEdit}
             changeStatus={changeStatus}
           />
@@ -267,6 +330,7 @@ export function UserAccessManagement() {
               <Field label="Last name"><Input required value={form.lastName} onChange={(event) => setForm({ ...form, lastName: event.target.value })} /></Field>
             </div>
             <Field label="Email"><Input required type="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} /></Field>
+            {!editingId && <Field label="Temporary Password"><Input required minLength={8} type="password" value={form.temporaryPassword} onChange={(event) => setForm({ ...form, temporaryPassword: event.target.value })} /></Field>}
             <Field label="Role">
               <select className={selectClass} value={form.role} onChange={(event) => updateRole(event.target.value as RoleType)}>
                 {data.options.roles.map((role) => <option key={role} value={role}>{ROLE_LABELS[role]}</option>)}
@@ -274,13 +338,21 @@ export function UserAccessManagement() {
             </Field>
             {!isPlatformRole && (
               <Field label="Organization">
-                <select required className={selectClass} value={form.organizationId} onChange={(event) => setForm({ ...form, organizationId: event.target.value, propertyIds: [], staffingCompanyId: "" })}>
+                <select required className={selectClass} value={form.organizationId} onChange={(event) => setForm({ ...form, organizationId: event.target.value, propertyIds: [], departmentId: "", staffingCompanyId: "" })}>
                   <option value="">Select organization</option>
                   {data.options.organizations.map((organization) => <option key={organization.id} value={organization.id}>{organization.name}</option>)}
                 </select>
               </Field>
             )}
-            {isPropertyManager && (
+            {!isPlatformRole && (
+              <Field label="Department (optional)">
+                <select className={selectClass} value={form.departmentId} onChange={(event) => setForm({ ...form, departmentId: event.target.value })}>
+                  <option value="">No department</option>
+                  {departments.map((department) => <option key={department.id} value={department.id}>{department.name}</option>)}
+                </select>
+              </Field>
+            )}
+            {hasPropertyAssignment && (
               <fieldset className="space-y-2">
                 <legend className="text-sm font-medium">Properties</legend>
                 <div className="grid gap-2 rounded-lg border p-3">
@@ -348,7 +420,7 @@ function UserDirectory({
             <TableHead>Assigned properties</TableHead>
             <TableHead>Staffing company</TableHead>
             <TableHead>Status</TableHead>
-            <TableHead>Clerk</TableHead>
+            <TableHead>Account</TableHead>
             <TableHead>Created</TableHead>
             <TableHead>Actions</TableHead>
           </tr>
@@ -364,10 +436,10 @@ function UserDirectory({
               <TableCell>{user.staffingCompany?.displayName ?? "—"}</TableCell>
               <TableCell>
                 <Badge className={user.status === "ACTIVE" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : ""}>
-                  {user.status}
+                  {user.mustChangePassword ? "PASSWORD RESET REQUIRED" : user.status}
                 </Badge>
               </TableCell>
-              <TableCell>{user.clerkLinked ? "Linked" : "Unlinked"}</TableCell>
+              <TableCell>{user.mustChangePassword ? "Password Reset Required" : user.clerkLinked ? "Active" : "Inactive"}</TableCell>
               <TableCell>{new Intl.DateTimeFormat("en-US", { dateStyle: "medium" }).format(new Date(user.createdAt))}</TableCell>
               <TableCell>
                 {user.canManage ? (

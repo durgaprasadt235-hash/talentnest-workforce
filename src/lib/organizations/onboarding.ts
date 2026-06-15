@@ -1,5 +1,7 @@
 import { randomBytes } from "node:crypto"
 
+import { clerkClient } from "@clerk/nextjs/server"
+import { hash } from "bcryptjs"
 import {
   OrganizationInvitationStatus,
   OrganizationStatus,
@@ -9,7 +11,7 @@ import {
 } from "@prisma/client"
 
 import { createAuditLog } from "@/src/lib/audit"
-import { sendOrganizationInvitationEmail } from "@/src/lib/email/organization-invitations"
+import { invitationUrl, sendInvitation } from "@/src/lib/email/send-invitation"
 import type { OrganizationFeatureOverrideInput, OrganizationOnboardingInput, OnboardingSubscriptionOption } from "@/src/lib/organizations/validation"
 import { prisma } from "@/src/lib/prisma"
 import type { CurrentUser } from "@/src/lib/rbac/current-user"
@@ -76,8 +78,23 @@ export async function onboardOrganization(input: OrganizationOnboardingInput, ac
       ? addDays(now, 30)
       : null
   const invitationToken = randomBytes(32).toString("hex")
+  const settings = await prisma.systemSetting.upsert({
+    where: { id: "system" },
+    create: { id: "system", enableInvitations: false },
+    update: {},
+  })
+  const client = await clerkClient()
+  const clerkUser = await client.users.createUser({
+    emailAddress: [input.owner.email],
+    password: input.owner.temporaryPassword,
+    firstName: input.owner.firstName,
+    lastName: input.owner.lastName,
+  })
+  const temporaryPassword = await hash(input.owner.temporaryPassword, 12)
 
-  const result = await prisma.$transaction(async (tx) => {
+  let result
+  try {
+    result = await prisma.$transaction(async (tx) => {
     const organization = await tx.organization.create({
       data: {
         ...normalizeOrganization(input.organization),
@@ -97,15 +114,18 @@ export async function onboardOrganization(input: OrganizationOnboardingInput, ac
     const owner = await tx.user.create({
       data: {
         organizationId: organization.id,
+        clerkUserId: clerkUser.id,
         email: input.owner.email,
         firstName: input.owner.firstName,
         lastName: input.owner.lastName,
         role: Role.ORGANIZATION_OWNER,
         status: RecordStatus.ACTIVE,
+        temporaryPassword,
+        mustChangePassword: true,
       },
     })
 
-    const invitation = await tx.organizationInvitation.create({
+    const invitation = settings.enableInvitations ? await tx.organizationInvitation.create({
       data: {
         organizationId: organization.id,
         email: input.owner.email,
@@ -116,10 +136,14 @@ export async function onboardOrganization(input: OrganizationOnboardingInput, ac
         token: invitationToken,
         expiresAt: addDays(now, 7),
       },
-    })
+    }) : null
 
     return { organization, owner, invitation }
-  })
+    })
+  } catch (error) {
+    await client.users.deleteUser(clerkUser.id).catch(() => undefined)
+    throw error
+  }
 
   await createAuditLog({
     action: "ONBOARD_ORGANIZATION",
@@ -129,29 +153,27 @@ export async function onboardOrganization(input: OrganizationOnboardingInput, ac
     userId: actor.id,
     metadata: {
       subscriptionOption: input.subscriptionOption,
-      invitationId: result.invitation.id,
+      invitationId: result.invitation?.id,
       ownerUserId: result.owner.id,
     },
   })
 
-  const emailDelivery = await sendOrganizationInvitationEmail({
-    email: result.invitation.email,
-    firstName: result.invitation.firstName,
-    organizationName: result.organization.name,
-    token: result.invitation.token,
-  }).catch((error: unknown) => ({
-    sent: false,
-    message: error instanceof Error ? error.message : "Invitation email could not be sent.",
-  }))
+  const emailDelivery = result.invitation
+    ? await deliverInvitation(result.invitation, result.organization.name)
+    : {
+        sent: false,
+        status: null,
+        message: "Direct login account created. No invitation email required.",
+      }
 
   return {
     organizationId: result.organization.id,
     organizationName: result.organization.name,
     ownerEmail: result.owner.email,
-    invitationStatus: result.invitation.status,
+    invitationStatus: emailDelivery.status,
     emailSent: emailDelivery.sent,
     emailMessage: emailDelivery.message,
-    expiresAt: result.invitation.expiresAt,
+    expiresAt: result.invitation?.expiresAt ?? null,
   }
 }
 
@@ -172,7 +194,10 @@ export async function getInvitationByToken(token: string) {
   if (!invitation) throw new Error("Invitation not found.")
 
   const status =
-    invitation.status === OrganizationInvitationStatus.PENDING &&
+    (
+      invitation.status === OrganizationInvitationStatus.PENDING ||
+      invitation.status === OrganizationInvitationStatus.SENT
+    ) &&
     invitation.expiresAt.getTime() < Date.now()
       ? OrganizationInvitationStatus.EXPIRED
       : invitation.status
@@ -198,7 +223,10 @@ export async function acceptInvitationByToken(token: string, actor: CurrentUser)
   })
   if (!invitation) throw new Error("Invitation not found.")
   if (invitation.expiresAt.getTime() < Date.now()) {
-    if (invitation.status === OrganizationInvitationStatus.PENDING) {
+    if (
+      invitation.status === OrganizationInvitationStatus.PENDING ||
+      invitation.status === OrganizationInvitationStatus.SENT
+    ) {
       await prisma.organizationInvitation.update({
         where: { id: invitation.id },
         data: { status: OrganizationInvitationStatus.EXPIRED },
@@ -214,6 +242,7 @@ export async function acceptInvitationByToken(token: string, actor: CurrentUser)
   }
   if (
     invitation.status !== OrganizationInvitationStatus.PENDING &&
+    invitation.status !== OrganizationInvitationStatus.SENT &&
     invitation.status !== OrganizationInvitationStatus.ACCEPTED
   ) {
     throw new AuthorizationError("This invitation can no longer be accepted.")
@@ -242,7 +271,7 @@ export async function resendOrganizationInvitation(
   invitationId: string,
   actor: CurrentUser,
 ) {
-  assertPlatformActor(actor)
+  assertPlatformOwner(actor)
   const invitation = await prisma.organizationInvitation.findFirst({
     where: { id: invitationId, organizationId },
     include: { organization: { select: { name: true } } },
@@ -262,19 +291,13 @@ export async function resendOrganizationInvitation(
       token,
       status: OrganizationInvitationStatus.PENDING,
       invitedAt: new Date(),
+      sentAt: null,
+      lastError: null,
       expiresAt: addDays(new Date(), 7),
       acceptedAt: null,
     },
   })
-  const emailDelivery = await sendOrganizationInvitationEmail({
-    email: updated.email,
-    firstName: updated.firstName,
-    organizationName: invitation.organization.name,
-    token: updated.token,
-  }).catch((error: unknown) => ({
-    sent: false,
-    message: error instanceof Error ? error.message : "Invitation email could not be sent.",
-  }))
+  const emailDelivery = await deliverInvitation(updated, invitation.organization.name)
 
   await createAuditLog({
     action: "RESEND_ORGANIZATION_INVITATION",
@@ -282,14 +305,71 @@ export async function resendOrganizationInvitation(
     entityId: updated.id,
     organizationId,
     userId: actor.id,
-    metadata: { emailSent: emailDelivery.sent },
+    metadata: { emailSent: emailDelivery.sent, status: emailDelivery.status },
   })
 
   return {
-    invitationStatus: updated.status,
+    invitationStatus: emailDelivery.status,
     expiresAt: updated.expiresAt,
+    sentAt: emailDelivery.sentAt,
+    lastError: emailDelivery.lastError,
     emailSent: emailDelivery.sent,
     emailMessage: emailDelivery.message,
+  }
+}
+
+async function deliverInvitation(
+  invitation: {
+    id: string
+    email: string
+    firstName: string
+    lastName: string
+    token: string
+    expiresAt: Date
+  },
+  organizationName: string,
+) {
+  try {
+    await sendInvitation({
+      email: invitation.email,
+      ownerName: `${invitation.firstName} ${invitation.lastName}`.trim(),
+      organizationName,
+      invitationUrl: invitationUrl(invitation.token),
+      expiryDate: invitation.expiresAt,
+    })
+    const sentAt = new Date()
+    await prisma.organizationInvitation.update({
+      where: { id: invitation.id },
+      data: {
+        status: OrganizationInvitationStatus.SENT,
+        sentAt,
+        lastError: null,
+      },
+    })
+    return {
+      sent: true,
+      status: OrganizationInvitationStatus.SENT,
+      sentAt,
+      lastError: null,
+      message: "Invitation email sent successfully.",
+    }
+  } catch (error) {
+    const lastError = error instanceof Error ? error.message : "Email delivery failed."
+    await prisma.organizationInvitation.update({
+      where: { id: invitation.id },
+      data: {
+        status: OrganizationInvitationStatus.PENDING,
+        sentAt: null,
+        lastError,
+      },
+    })
+    return {
+      sent: false,
+      status: OrganizationInvitationStatus.PENDING,
+      sentAt: null,
+      lastError,
+      message: "Email delivery failed. Check Resend configuration.",
+    }
   }
 }
 
@@ -324,6 +404,12 @@ export async function updateOrganizationFeatureOverride(
 function assertPlatformActor(actor: CurrentUser) {
   if (actor.role !== Role.PLATFORM_OWNER && actor.role !== Role.PLATFORM_ADMIN) {
     throw new AuthorizationError("Only platform administrators can onboard organizations.")
+  }
+}
+
+function assertPlatformOwner(actor: CurrentUser) {
+  if (actor.role !== Role.PLATFORM_OWNER) {
+    throw new AuthorizationError("Only the platform owner can resend invitations.")
   }
 }
 
