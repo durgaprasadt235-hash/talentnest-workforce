@@ -30,6 +30,7 @@ import type {
   DeviceRequest,
   ExceptionActionRequest,
   KioskEmployeeVerification,
+  KioskSessionInput,
 } from "@/src/lib/attendance/types"
 import { prisma } from "@/src/lib/prisma"
 import type { CurrentUser } from "@/src/lib/rbac/current-user"
@@ -296,7 +297,9 @@ function assertDeviceScope(
 
 async function getKioskContext(input: ClockRequest) {
   const device = await prisma.attendanceDevice.findUnique({
-    where: { deviceCode: input.deviceCode },
+    where: input.fingerprint
+      ? { fingerprintHash: fingerprintHash(input.fingerprint) }
+      : { deviceCode: input.deviceCode },
     include: {
       property: { include: { geofences: true } },
     },
@@ -332,6 +335,12 @@ async function getKioskContext(input: ClockRequest) {
   })
 
   const employee = await validateKioskEmployee(activeDevice, input)
+  if (input.employeeId && employee.id !== input.employeeId) {
+    throw new Error("Kiosk session employee does not match the supplied PIN.")
+  }
+  if (input.propertyId && activeDevice.propertyId !== input.propertyId) {
+    throw new Error("Kiosk session property does not match the approved device.")
+  }
 
   return { device: activeDevice, employee }
 }
@@ -405,11 +414,135 @@ export async function verifyKioskEmployee(input: KioskEmployeeVerification) {
   }
 }
 
+export async function createKioskSession(input: KioskSessionInput) {
+  const device = await prisma.attendanceDevice.findUnique({
+    where: { fingerprintHash: fingerprintHash(input.fingerprint) },
+    include: { property: true },
+  })
+  if (
+    !device ||
+    device.status !== AttendanceDeviceStatus.ACTIVE ||
+    !device.organizationId ||
+    !device.propertyId ||
+    !device.property
+  ) {
+    throw new Error("This device is not registered or active.")
+  }
+  await assertOrganizationFeatureAccessById(device.organizationId, FeatureKey.KIOSK)
+  const activeDevice = {
+    ...device,
+    organizationId: device.organizationId,
+    propertyId: device.propertyId,
+    property: device.property,
+  }
+  const employee = await validateKioskEmployee(activeDevice, input)
+  await prisma.attendanceDevice.update({
+    where: { id: device.id },
+    data: { lastSeenAt: new Date() },
+  })
+  return buildKioskSessionPayload(activeDevice, employee)
+}
+
+async function buildKioskSessionPayload(
+  device: { organizationId: string; propertyId: string; property: { name: string } },
+  employee: {
+    id: string
+    organizationId: string
+    propertyId: string | null
+    departmentId: string | null
+    employeeNumber: string
+    firstName: string
+    lastName: string
+    employmentType: string
+    position: string | null
+    staffingCompanyId: string | null
+  },
+) {
+  const now = new Date()
+  const startOfDay = new Date(now)
+  startOfDay.setHours(0, 0, 0, 0)
+  const endOfDay = new Date(startOfDay)
+  endOfDay.setDate(endOfDay.getDate() + 1)
+  const startOfWeek = new Date(startOfDay)
+  const day = startOfWeek.getDay()
+  startOfWeek.setDate(startOfWeek.getDate() - (day === 0 ? 6 : day - 1))
+  const endOfWeek = new Date(startOfWeek)
+  endOfWeek.setDate(endOfWeek.getDate() + 7)
+
+  const [department, currentShift, previousShift, nextShift, records] = await Promise.all([
+    employee.departmentId
+      ? prisma.department.findUnique({ where: { id: employee.departmentId }, select: { name: true } })
+      : null,
+    prisma.shift.findFirst({
+      where: { employeeId: employee.id, propertyId: device.propertyId, startTime: { lte: endOfDay }, endTime: { gte: startOfDay } },
+      include: { department: { select: { name: true } }, departmentRole: { select: { name: true } } },
+      orderBy: { startTime: "asc" },
+    }),
+    prisma.shift.findFirst({
+      where: { employeeId: employee.id, propertyId: device.propertyId, endTime: { lt: startOfDay } },
+      include: { department: { select: { name: true } }, departmentRole: { select: { name: true } }, attendanceRecords: { select: { clockInAt: true, clockOutAt: true } } },
+      orderBy: { endTime: "desc" },
+    }),
+    prisma.shift.findFirst({
+      where: { employeeId: employee.id, propertyId: device.propertyId, startTime: { gt: endOfDay } },
+      include: { department: { select: { name: true } }, departmentRole: { select: { name: true } } },
+      orderBy: { startTime: "asc" },
+    }),
+    prisma.attendanceRecord.findMany({
+      where: { employeeId: employee.id, propertyId: device.propertyId, clockInAt: { gte: startOfWeek, lt: endOfWeek } },
+      select: { id: true, clockInAt: true, clockOutAt: true, status: true },
+      orderBy: { clockInAt: "desc" },
+    }),
+  ])
+  const workedHours = (items: Array<{ clockInAt: Date | null; clockOutAt: Date | null; status?: AttendanceRecordStatus }>) =>
+    Math.round(items.reduce((total, record) => {
+      if (!record.clockInAt) return total
+      const end = record.clockOutAt ?? (record.status === AttendanceRecordStatus.OPEN ? now : record.clockInAt)
+      return total + Math.max(0, end.getTime() - record.clockInAt.getTime()) / HOUR_MS
+    }, 0) * 100) / 100
+  const todayRecords = records.filter((record) => record.clockInAt && record.clockInAt >= startOfDay)
+  const openRecord = records.find((record) =>
+    record.status === AttendanceRecordStatus.OPEN ||
+    (record.status === AttendanceRecordStatus.PENDING_MANAGER_APPROVAL && !record.clockOutAt),
+  ) ?? null
+  const lastClockIn = records.find((record) => record.clockInAt)?.clockInAt ?? null
+  const lastClockOut = records.find((record) => record.clockOutAt)?.clockOutAt ?? null
+  const scheduledHours = currentShift
+    ? Math.max(0, (currentShift.endTime.getTime() - currentShift.startTime.getTime()) / HOUR_MS)
+    : 0
+
+  return {
+    employeeId: employee.id,
+    employeeName: `${employee.firstName} ${employee.lastName}`,
+    employeeNumber: employee.employeeNumber,
+    organizationId: employee.organizationId,
+    propertyId: device.propertyId,
+    propertyName: device.property.name,
+    departmentId: employee.departmentId,
+    departmentName: department?.name ?? null,
+    employmentType: employee.employmentType,
+    staffingCompanyId: employee.staffingCompanyId,
+    position: employee.position,
+    currentOpenAttendanceRecord: openRecord,
+    todayWorkedHours: workedHours(todayRecords),
+    weekWorkedHours: workedHours(records),
+    remainingScheduledHours: Math.max(0, Math.round((scheduledHours - workedHours(todayRecords)) * 100) / 100),
+    currentShift,
+    previousShift: previousShift
+      ? { ...previousShift, actualWorkedHours: workedHours(previousShift.attendanceRecords) }
+      : null,
+    nextShift,
+    lastClockIn,
+    lastClockOut,
+    todayPunches: todayRecords,
+  }
+}
+
 export async function createAttendanceCorrectionRequest(
   input: AttendanceCorrectionRequestInput,
 ) {
   const device = await prisma.attendanceDevice.findUnique({
-    where: { deviceCode: input.deviceCode },
+    where: { fingerprintHash: fingerprintHash(input.fingerprint) },
     include: { property: true },
   })
   if (
@@ -426,6 +559,9 @@ export async function createAttendanceCorrectionRequest(
     { organizationId: device.organizationId, propertyId: device.propertyId },
     input,
   )
+  if (employee.id !== input.employeeId || device.propertyId !== input.propertyId) {
+    throw new Error("Kiosk session does not match the approved device.")
+  }
 
   let attendanceRecordId = input.attendanceRecordId
   if (attendanceRecordId) {
@@ -455,13 +591,17 @@ export async function createAttendanceCorrectionRequest(
       employeeId: employee.id,
       attendanceRecordId,
       correctionType: input.correctionType,
+      requestedBySource: "KIOSK",
+      requestedDate: new Date(`${input.requestedDate}T00:00:00`),
+      requestedTime: input.requestedTime,
+      notes: input.notes,
       requestedClockInAt: input.requestedClockInAt
         ? new Date(input.requestedClockInAt)
         : undefined,
       requestedClockOutAt: input.requestedClockOutAt
         ? new Date(input.requestedClockOutAt)
         : undefined,
-      reason: input.reason,
+      reason: input.notes?.trim() || input.correctionType.replaceAll("_", " "),
     },
   })
 
@@ -480,7 +620,7 @@ async function validateKioskEmployee(
     organizationId: string
     propertyId: string
   },
-  input: KioskEmployeeVerification,
+  input: { pin: string },
 ) {
   const employees = await prisma.employee.findMany({
     where: {
@@ -504,13 +644,13 @@ async function validateKioskEmployee(
     await audit("CLOCK_ATTEMPT_BLOCKED", "AttendanceDevice", undefined, device.organizationId, device.propertyId, {
       reason: "INVALID_PIN",
     })
-    throw new Error("Invalid PIN.")
+    throw new Error("Invalid PIN for this property.")
   }
   if (matches.length > 1) {
     await audit("CLOCK_ATTEMPT_BLOCKED", "AttendanceDevice", undefined, device.organizationId, device.propertyId, {
       reason: "PIN_CONFLICT",
     })
-    throw new Error("PIN conflict. Contact manager.")
+    throw new Error("Duplicate active PINs found. Contact manager.")
   }
   return matches[0]
 }

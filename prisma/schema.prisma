@@ -745,6 +745,10 @@ model AttendanceCorrectionRequest {
   employeeId          String
   attendanceRecordId  String?
   correctionType      String
+  requestedBySource   String                     @default("KIOSK")
+  requestedDate       DateTime?                  @db.Date
+  requestedTime       String?
+  notes               String?
   requestedClockInAt  DateTime?
   requestedClockOutAt DateTime?
   reason              String

@@ -11,4 +11,5 @@ export type {
   DeviceRequest,
   ExceptionActionRequest,
   KioskEmployeeVerification,
+  KioskSessionInput,
 } from "@/src/lib/attendance/validation"
