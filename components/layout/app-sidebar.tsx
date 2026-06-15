@@ -106,6 +106,7 @@ const roleNavigation: Record<RoleType, NavSection[]> = {
     { items: [item.dashboard] },
     { label: "Workforce", items: [item.employees] },
     { label: "Operations", items: [item.schedules, item.attendance, item.kiosk, item.weeklyAttendance, item.timesheets, item.kioskSetup] },
+    { label: "Settings", items: [item.auditLogs] },
   ],
   [Role.FINANCE_USER]: [
     { items: [item.dashboard] },
