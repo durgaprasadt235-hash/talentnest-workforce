@@ -486,7 +486,6 @@ async function validateKioskEmployee(
     where: {
       organizationId: device.organizationId,
       propertyId: device.propertyId,
-      employeeNumber: input.employeeNumber || undefined,
       status: EmployeeStatus.ACTIVE,
       clockPinHash: { not: null },
     },

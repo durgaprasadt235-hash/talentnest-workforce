@@ -451,6 +451,7 @@ model Employee {
 
   @@index([organizationId])
   @@index([propertyId])
+  @@index([propertyId, status])
   @@index([departmentId])
   @@unique([organizationId, employeeNumber])
   @@index([departmentRoleId])

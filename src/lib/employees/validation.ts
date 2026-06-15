@@ -28,7 +28,10 @@ export const createEmployeeSchema = z
   .superRefine(validateAgencyAssignment)
 
 export const updateEmployeeSchema = z
-  .object(employeeFields)
+  .object({
+    ...employeeFields,
+    pin: z.string().regex(/^\d{4}$/, "PIN must be exactly 4 digits.").optional(),
+  })
   .superRefine(validateAgencyAssignment)
 
 export const employeeStatusSchema = z.object({

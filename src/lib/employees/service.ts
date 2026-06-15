@@ -17,7 +17,8 @@ import { Role } from "@/src/lib/rbac/roles"
 import { hashPin, verifyPin } from "@/src/lib/security/pin"
 
 const DUPLICATE_PIN_ERROR =
-  "This PIN is already assigned to another active employee. Choose a different PIN."
+  "This PIN is already assigned to another active employee at this property."
+const PROPERTY_PIN_ERROR = "Assign a property before assigning a kiosk PIN."
 
 const employeeSelect = {
   id: true,
@@ -100,7 +101,8 @@ export async function listEmployees(
 export async function createEmployee(input: CreateEmployeeInput, actor?: CurrentUser) {
   assertEmployeeScope(actor, input.organizationId, input.propertyId)
   await validateAssignments(input)
-  await ensureUniqueActivePin(input.organizationId, input.pin)
+  if (!input.propertyId) throw new Error(PROPERTY_PIN_ERROR)
+  await ensureUniqueActivePin(input.propertyId, input.pin)
 
   const employee = await prisma.employee.create({
     data: {
@@ -125,10 +127,25 @@ export async function createEmployee(input: CreateEmployeeInput, actor?: Current
 export async function updateEmployee(id: string, input: UpdateEmployeeInput, actor?: CurrentUser) {
   assertEmployeeScope(actor, input.organizationId, input.propertyId)
   await validateAssignments(input)
+  const existing = await prisma.employee.findUnique({
+    where: { id },
+    select: { organizationId: true, propertyId: true, clockPinHash: true },
+  })
+  if (!existing) throw new Error("Employee not found.")
+  assertEmployeeScope(actor, existing.organizationId, existing.propertyId)
+  if (input.pin) {
+    if (!input.propertyId) throw new Error(PROPERTY_PIN_ERROR)
+    await ensureUniqueActivePin(input.propertyId, input.pin, id)
+  } else if (existing.clockPinHash && existing.propertyId !== input.propertyId) {
+    throw new Error("Enter a new 4-digit PIN when changing an employee's property.")
+  }
 
   const employee = await prisma.employee.update({
     where: { id },
-    data: normalizeEmployeeInput(input),
+    data: {
+      ...normalizeEmployeeInput(input),
+      clockPinHash: input.pin ? await hashPin(input.pin) : undefined,
+    },
     select: employeeSelect,
   })
 
@@ -215,7 +232,8 @@ export async function resetEmployeePin(id: string, pin: string, actor?: CurrentU
   })
   if (!existing) throw new Error("Employee not found.")
   assertEmployeeScope(actor, existing.organizationId, existing.propertyId)
-  await ensureUniqueActivePin(existing.organizationId, pin, id)
+  if (!existing.propertyId) throw new Error(PROPERTY_PIN_ERROR)
+  await ensureUniqueActivePin(existing.propertyId, pin, id)
 
   const employee = await prisma.employee.update({
     where: { id },
@@ -313,16 +331,14 @@ function normalizeEmployeeInput(input: CreateEmployeeInput | UpdateEmployeeInput
 }
 
 async function ensureUniqueActivePin(
-  organizationId: string,
+  propertyId: string,
   pin: string,
   excludedEmployeeId?: string,
 ) {
   const employees = await prisma.employee.findMany({
     where: {
-      organizationId,
-      status: {
-        notIn: [EmployeeStatus.INACTIVE, EmployeeStatus.TERMINATED],
-      },
+      propertyId,
+      status: EmployeeStatus.ACTIVE,
       clockPinHash: { not: null },
       id: excludedEmployeeId ? { not: excludedEmployeeId } : undefined,
     },

@@ -143,6 +143,11 @@ const statusFilters: { value: StatusFilter; label: string }[] = [
 const selectClass =
   "h-10 w-full rounded-lg border bg-background px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
 
+function generateFourDigitPin() {
+  const randomValue = crypto.getRandomValues(new Uint32Array(1))[0]
+  return String(1000 + (randomValue % 9000))
+}
+
 export function EmployeeManagement() {
   const { currentUser } = useCurrentUser()
   const canManage = hasPermission(currentUser, Permission.MANAGE_EMPLOYEES)
@@ -151,6 +156,7 @@ export function EmployeeManagement() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [employeeFormOpen, setEmployeeFormOpen] = useState(false)
   const [pinEmployee, setPinEmployee] = useState<Employee | null>(null)
+  const [pinReset, setPinReset] = useState("")
   const [deleteTarget, setDeleteTarget] = useState<Employee | null>(null)
   const [terminateTarget, setTerminateTarget] = useState<Employee | null>(null)
   const [terminationReason, setTerminationReason] = useState("")
@@ -255,7 +261,7 @@ export function EmployeeManagement() {
 
   async function submitEmployee(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (!editingId && !/^\d{4}$/.test(form.pin)) {
+    if ((!editingId || form.pin) && !/^\d{4}$/.test(form.pin)) {
       return setError("PIN must be exactly 4 digits.")
     }
     setBusy(true)
@@ -269,9 +275,10 @@ export function EmployeeManagement() {
         headers: { "content-type": "application/json", ...requestHeaders },
         body: JSON.stringify({
           ...form,
-          pin: editingId ? undefined : form.pin,
+          pin: form.pin || undefined,
           propertyId: form.propertyId || null,
           departmentId: form.departmentId || null,
+          departmentRoleId: form.departmentRoleId || null,
           staffingCompanyId: form.staffingCompanyId || null,
           position: form.position || null,
           phone: form.phone || null,
@@ -334,20 +341,19 @@ export function EmployeeManagement() {
 
     setBusy(true)
     setError("")
-    const formData = new FormData(event.currentTarget)
     const response = await fetch(`/api/employees/${pinEmployee.id}/reset-pin`, {
       method: "POST",
       headers: { "content-type": "application/json", ...requestHeaders },
       body: JSON.stringify({
-        pin: formData.get("pin"),
-        confirmPin: formData.get("confirmPin"),
+        pin: pinReset,
+        confirmPin: pinReset,
       }),
     })
     const result = await response.json()
     setBusy(false)
 
     if (!response.ok) return setError(result.error)
-    event.currentTarget.reset()
+    setPinReset("")
     setPinEmployee(null)
     setMessage("Employee PIN reset securely.")
   }
@@ -431,18 +437,16 @@ export function EmployeeManagement() {
               <Input type="email" value={form.email} onChange={(event) => updateForm("email", event.target.value)} placeholder="Email (optional)" />
               <Input type="number" min="0" step="0.01" value={form.payRate} onChange={(event) => updateForm("payRate", event.target.value)} placeholder="Pay rate (optional)" />
               <Input type="date" value={form.hireDate} onChange={(event) => updateForm("hireDate", event.target.value)} />
-              {!editingId && (
-                <Input
-                  value={form.pin}
-                  onChange={(event) => updateForm("pin", event.target.value.replace(/\D/g, "").slice(0, 4))}
-                  placeholder="Required 4-digit kiosk PIN"
-                  type="password"
-                  inputMode="numeric"
-                  pattern="\d{4}"
-                  maxLength={4}
-                  required
-                />
-              )}
+              <Input
+                value={form.pin}
+                onChange={(event) => updateForm("pin", event.target.value.replace(/\D/g, "").slice(0, 4))}
+                placeholder={editingId ? "New 4-digit kiosk PIN (optional)" : "Required 4-digit kiosk PIN"}
+                type="password"
+                inputMode="numeric"
+                pattern="\d{4}"
+                maxLength={4}
+                required={!editingId}
+              />
               <select
                 className={selectClass}
                 value={form.employmentType}
@@ -469,8 +473,9 @@ export function EmployeeManagement() {
                 className={selectClass}
                 value={form.propertyId}
                 onChange={(event) => updateForm("propertyId", event.target.value)}
+                required={!editingId || Boolean(form.pin)}
               >
-                <option value="">No property assignment</option>
+                <option value="">Select property</option>
                 {properties.map((item) => (
                   <option key={item.id} value={item.id}>{item.name}</option>
                 ))}
@@ -524,7 +529,12 @@ export function EmployeeManagement() {
       )}
 
       {canManage && (
-        <Sheet open={Boolean(pinEmployee)} onOpenChange={(open) => !open && setPinEmployee(null)}>
+        <Sheet open={Boolean(pinEmployee)} onOpenChange={(open) => {
+          if (!open) {
+            setPinEmployee(null)
+            setPinReset("")
+          }
+        }}>
           <SheetContent className="sm:max-w-md">
             <SheetHeader>
               <SheetTitle>
@@ -536,10 +546,12 @@ export function EmployeeManagement() {
             </SheetHeader>
             <form onSubmit={resetPin} className="grid gap-4 px-4">
               {error && <p className="text-sm text-destructive">{error}</p>}
-              <Input name="pin" type="password" inputMode="numeric" pattern="\d{4}" maxLength={4} placeholder="New 4-digit PIN" required />
-              <Input name="confirmPin" type="password" inputMode="numeric" pattern="\d{4}" maxLength={4} placeholder="Confirm new 4-digit PIN" required />
+              <Input value={pinReset} onChange={(event) => setPinReset(event.target.value.replace(/\D/g, "").slice(0, 4))} name="pin" type="password" inputMode="numeric" pattern="\d{4}" maxLength={4} placeholder="New 4-digit PIN" required />
+              <Button type="button" variant="outline" onClick={() => setPinReset(generateFourDigitPin())}>
+                Generate 4-digit PIN
+              </Button>
               <SheetFooter className="px-0">
-                <Button disabled={busy}>{busy ? "Resetting..." : "Reset PIN"}</Button>
+                <Button disabled={busy || pinReset.length !== 4}>{busy ? "Resetting..." : "Reset PIN"}</Button>
                 <Button type="button" variant="outline" onClick={() => setPinEmployee(null)}>
                   Cancel
                 </Button>

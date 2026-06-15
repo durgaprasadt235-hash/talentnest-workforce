@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useRef, useState } from "react"
-import { Clock3, LogIn, LogOut, RefreshCw, RotateCcw, UserRound } from "lucide-react"
+import { Clock3, LogIn, LogOut, RefreshCw, RotateCcw } from "lucide-react"
 
 import { StatusMessage } from "@/components/attendance/status-message"
 import { Button } from "@/components/ui/button"
@@ -13,6 +13,8 @@ type DeviceInfo = {
   deviceName: string
   deviceCode: string | null
   status: "PENDING" | "ACTIVE" | "REJECTED" | "SUSPENDED" | "REMOVED"
+  fingerprintHash: string
+  organization: { name: string } | null
   property: { name: string } | null
 }
 type EmployeeSession = {
@@ -62,7 +64,6 @@ export function KioskClock() {
   const sessionPinRef = useRef("")
   const [device, setDevice] = useState<DeviceInfo | null>(null)
   const [pin, setPin] = useState("")
-  const [employeeNumber, setEmployeeNumber] = useState("")
   const [failedAttempts, setFailedAttempts] = useState(0)
   const [lockedUntil, setLockedUntil] = useState(0)
   const [session, setSession] = useState<EmployeeSession | null>(null)
@@ -126,7 +127,7 @@ export function KioskClock() {
     setMessage(caught instanceof Error ? caught.message : "Kiosk action failed.")
   }
 
-  async function verifyEmployee() {
+  async function verifyEmployee(action: "clock-in" | "clock-out") {
     if (!device?.deviceCode) return
     if (busy) return
     if (Date.now() < lockedUntil) return
@@ -137,17 +138,18 @@ export function KioskClock() {
       const response = await fetch("/api/attendance/kiosk/verify", {
         method: "POST",
         headers: { "content-type": "application/json" },
-      body: JSON.stringify({ deviceCode: device.deviceCode, employeeNumber: employeeNumber || undefined, pin }),
+        body: JSON.stringify({ deviceCode: device.deviceCode, pin }),
       })
       const data = await response.json()
       if (!response.ok) throw new Error(data.error)
       sessionPinRef.current = pin
+      const verifiedPin = pin
       setPin("")
-      setEmployeeNumber("")
       setFailedAttempts(0)
       setSession(data)
       setError(false)
-      startCamera().catch(showError)
+      await startCamera()
+      await punch(action, verifiedPin)
     } catch (caught) {
       const attempts = failedAttempts + 1
       setPin("")
@@ -198,8 +200,8 @@ export function KioskClock() {
     })
   }
 
-  async function punch(action: "clock-in" | "clock-out") {
-    if (!device?.deviceCode || !session) return
+  async function punch(action: "clock-in" | "clock-out", pinOverride?: string) {
+    if (!device?.deviceCode) return
     setBusy(true)
     setMessage("")
     try {
@@ -209,7 +211,7 @@ export function KioskClock() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           deviceCode: device.deviceCode,
-          pin: sessionPinRef.current,
+          pin: pinOverride ?? sessionPinRef.current,
           photoUrl,
           location,
         }),
@@ -264,7 +266,6 @@ export function KioskClock() {
     setSession(null)
     sessionPinRef.current = ""
     setPin("")
-    setEmployeeNumber("")
     setCorrectionOpen(false)
     setCorrectionType("MISSED_PUNCH")
     setRequestedClockInAt("")
@@ -274,30 +275,28 @@ export function KioskClock() {
   }
 
   if (!device || device.status === "PENDING") {
-    return <DeviceState title="Waiting for device approval" description="This kiosk checks for manager approval every 10 seconds." onRefresh={() => checkDevice().catch(showError)} />
+    return <DeviceState device={device} title="Device pending approval" description="This kiosk checks for manager approval every 10 seconds." onRefresh={() => checkDevice().catch(showError)} />
   }
 
   if (device.status !== "ACTIVE" || !device.deviceCode || !device.property) {
-    return <DeviceState title={device.status === "REJECTED" ? "Device rejected" : "Device registration required"} description="Contact a manager to approve and assign this kiosk." onRefresh={() => checkDevice().catch(showError)} />
+    return <DeviceState device={device} title={device.status === "REJECTED" ? "Device rejected" : "Device registration required"} description="Contact a manager to approve and assign this kiosk." onRefresh={() => checkDevice().catch(showError)} />
   }
 
   return (
-    <main className="min-h-screen bg-muted/30 p-4 sm:p-8">
+    <main className="min-h-dvh bg-muted/30 p-3 sm:p-5">
       <video ref={videoRef} autoPlay playsInline muted className="fixed size-px opacity-0" />
-      <div className="mx-auto max-w-3xl space-y-6">
+      <div className="mx-auto max-w-6xl">
         {!session ? (
           <ReadyScreen
             device={device}
             now={now}
             pin={pin}
-            employeeNumber={employeeNumber}
             lockedSeconds={Math.max(0, Math.ceil((lockedUntil - now.getTime()) / 1000))}
             busy={busy}
             message={message}
             error={error}
             onPin={(value) => setPin(value.replace(/\D/g, "").slice(0, 4))}
-            onEmployeeNumber={setEmployeeNumber}
-            onEnter={verifyEmployee}
+            onPunch={verifyEmployee}
           />
         ) : (
           <PunchScreen
@@ -326,33 +325,44 @@ export function KioskClock() {
   )
 }
 
-function ReadyScreen({ device, now, pin, employeeNumber, lockedSeconds, busy, message, error, onPin, onEmployeeNumber, onEnter }: {
+function ReadyScreen({ device, now, pin, lockedSeconds, busy, message, error, onPin, onPunch }: {
   device: DeviceInfo
   now: Date
   pin: string
-  employeeNumber: string
   lockedSeconds: number
   busy: boolean
   message: string
   error: boolean
   onPin: (value: string) => void
-  onEmployeeNumber: (value: string) => void
-  onEnter: () => void
+  onPunch: (action: "clock-in" | "clock-out") => void
 }) {
   return (
-    <Card className="mx-auto mt-[8vh] max-w-xl">
-      <CardContent className="space-y-6 p-8 sm:p-10">
-        <div className="text-center">
-          <p className="text-sm font-medium text-muted-foreground">{device.deviceName}</p>
-          <h1 className="mt-1 text-3xl font-semibold">{device.property?.name}</h1>
-          <p className="mt-3 text-lg">{now.toLocaleDateString()} · {now.toLocaleTimeString()}</p>
+    <Card className="mx-auto">
+      <CardContent className="grid min-h-[calc(100dvh-1.5rem)] gap-5 p-4 sm:min-h-[calc(100dvh-2.5rem)] sm:p-6 lg:grid-cols-[minmax(320px,1fr)_minmax(300px,0.8fr)] lg:items-center lg:gap-8">
+        <div className="space-y-4">
+          <div className="text-center">
+            <p className="text-sm font-medium text-muted-foreground">Enter your manager-assigned PIN</p>
+            <Input value={pin} onChange={(event) => onPin(event.target.value)} aria-label="4-digit PIN" placeholder="4-digit PIN" type="password" inputMode="numeric" autoComplete="off" maxLength={4} className="mt-3 h-14 text-center text-2xl tracking-[0.5em]" disabled={busy || lockedSeconds > 0} />
+          </div>
+          <NumericKeypad pin={pin} disabled={busy || lockedSeconds > 0} onPin={onPin} />
+          <div className="grid grid-cols-2 gap-3">
+            <Button disabled={busy || pin.length !== 4 || lockedSeconds > 0} className="h-16 text-base sm:text-lg" onClick={() => onPunch("clock-in")}><LogIn /> Clock In</Button>
+            <Button disabled={busy || pin.length !== 4 || lockedSeconds > 0} variant="outline" className="h-16 text-base sm:text-lg" onClick={() => onPunch("clock-out")}><LogOut /> Clock Out</Button>
+          </div>
+          {lockedSeconds > 0 && <p className="text-center text-sm font-medium text-destructive">Too many failed attempts. Try again in {lockedSeconds} seconds.</p>}
         </div>
-        <Input value={employeeNumber} onChange={(event) => onEmployeeNumber(event.target.value)} placeholder="Employee ID" autoComplete="off" className="h-12 text-center text-lg" disabled={busy || lockedSeconds > 0} />
-        <Input value={pin} onChange={(event) => onPin(event.target.value)} placeholder="4-digit PIN" type="password" inputMode="numeric" autoComplete="off" maxLength={4} className="h-16 text-center text-2xl tracking-[0.5em]" onKeyDown={(event) => event.key === "Enter" && onEnter()} disabled={busy || lockedSeconds > 0} />
-        <NumericKeypad pin={pin} disabled={busy || lockedSeconds > 0} onPin={onPin} />
-        <Button disabled={busy || pin.length !== 4 || lockedSeconds > 0} className="h-16 w-full text-lg" onClick={onEnter}><UserRound /> Enter</Button>
-        {lockedSeconds > 0 && <p className="text-center text-sm font-medium text-destructive">Too many failed attempts. Try again in {lockedSeconds} seconds.</p>}
-        <StatusMessage message={message} error={error} />
+        <div className="space-y-5 rounded-2xl bg-muted/50 p-5 text-center sm:p-8">
+          <div>
+            <p className="text-sm font-medium text-muted-foreground">{device.deviceName}</p>
+            <h1 className="mt-1 text-3xl font-semibold">{device.property?.name}</h1>
+            <p className="mt-3 text-lg">{now.toLocaleDateString()} · {now.toLocaleTimeString()}</p>
+          </div>
+          <div className="space-y-2 text-sm text-muted-foreground">
+            <p>Enter your private 4-digit PIN.</p>
+            <p>Select Clock In or Clock Out. Your identity is matched only within this property.</p>
+          </div>
+          <StatusMessage message={message} error={error} />
+        </div>
       </CardContent>
     </Card>
   )
@@ -362,11 +372,11 @@ function NumericKeypad({ pin, disabled, onPin }: { pin: string; disabled: boolea
   return (
     <div className="grid grid-cols-3 gap-3">
       {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((digit) => (
-        <Button key={digit} type="button" variant="outline" disabled={disabled || pin.length >= 4} className="h-16 text-xl" onClick={() => onPin(`${pin}${digit}`)}>{digit}</Button>
+        <Button key={digit} type="button" variant="outline" disabled={disabled || pin.length >= 4} className="h-12 text-xl sm:h-14" onClick={() => onPin(`${pin}${digit}`)}>{digit}</Button>
       ))}
-      <Button type="button" variant="outline" disabled={disabled || pin.length === 0} className="h-16" onClick={() => onPin("")}>Clear</Button>
-      <Button type="button" variant="outline" disabled={disabled || pin.length >= 4} className="h-16 text-xl" onClick={() => onPin(`${pin}0`)}>0</Button>
-      <Button type="button" variant="outline" disabled={disabled || pin.length === 0} className="h-16" onClick={() => onPin(pin.slice(0, -1))}>Delete</Button>
+      <Button type="button" variant="outline" disabled={disabled || pin.length === 0} className="h-12 sm:h-14" onClick={() => onPin("")}>Clear</Button>
+      <Button type="button" variant="outline" disabled={disabled || pin.length >= 4} className="h-12 text-xl sm:h-14" onClick={() => onPin(`${pin}0`)}>0</Button>
+      <Button type="button" variant="outline" disabled={disabled || pin.length === 0} className="h-12 sm:h-14" onClick={() => onPin(pin.slice(0, -1))}>Delete</Button>
     </div>
   )
 }
@@ -431,13 +441,18 @@ function PunchScreen({ session, now, busy, correctionOpen, correctionType, reque
   )
 }
 
-function DeviceState({ title, description, onRefresh }: { title: string; description: string; onRefresh: () => void }) {
+function DeviceState({ device, title, description, onRefresh }: { device: DeviceInfo | null; title: string; description: string; onRefresh: () => void }) {
   return (
     <main className="flex min-h-screen items-center justify-center bg-muted/30 p-6">
       <Card className="w-full max-w-xl">
         <CardContent className="space-y-5 p-8 text-center">
           <RefreshCw className="mx-auto size-10 text-primary" />
           <div><h1 className="text-2xl font-semibold">{title}</h1><p className="mt-2 text-sm text-muted-foreground">{description}</p></div>
+          <div className="rounded-xl border bg-muted/40 p-4 text-left text-sm">
+            <p><span className="font-medium">Organization:</span> {device?.organization?.name ?? "Not selected"}</p>
+            <p><span className="font-medium">Property:</span> {device?.property?.name ?? "Not selected"}</p>
+            <p><span className="font-medium">Fingerprint:</span> <span className="font-mono">{device?.fingerprintHash?.slice(0, 8).toUpperCase() ?? "Registering"}</span></p>
+          </div>
           <Button variant="outline" onClick={onRefresh}><RefreshCw /> Check now</Button>
         </CardContent>
       </Card>

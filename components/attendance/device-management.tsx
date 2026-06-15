@@ -163,7 +163,7 @@ export function DeviceManagement() {
         </p>
         </div>
         <Button disabled={registering} onClick={() => void registerThisDevice()}>
-          {registering ? "Registering..." : "Register This Device"}
+          {registering ? "Registering..." : "Register / Approve This Device"}
         </Button>
       </div>
 
