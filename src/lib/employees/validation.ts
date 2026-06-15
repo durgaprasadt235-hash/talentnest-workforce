@@ -7,11 +7,16 @@ const employeeFields = {
   organizationId: z.string().trim().min(1).max(100),
   propertyId: optionalId,
   departmentId: optionalId,
+  departmentRoleId: optionalId,
   employeeNumber: z.string().trim().min(1).max(50),
   firstName: z.string().trim().min(1).max(100),
   lastName: z.string().trim().min(1).max(100),
   employmentType: z.enum(EmploymentType),
   position: z.string().trim().max(200).nullable().optional(),
+  phone: z.string().trim().max(50).nullable().optional(),
+  email: z.email().nullable().optional(),
+  payRate: z.number().nonnegative().nullable().optional(),
+  hireDate: z.iso.date().nullable().optional(),
   staffingCompanyId: optionalId,
 }
 
@@ -49,7 +54,8 @@ function validateAgencyAssignment(
   context: z.RefinementCtx,
 ) {
   if (
-    value.employmentType === EmploymentType.AGENCY &&
+    (value.employmentType === EmploymentType.AGENCY ||
+      value.employmentType === EmploymentType.STAFFING) &&
     !value.staffingCompanyId
   ) {
     context.addIssue({
@@ -61,6 +67,7 @@ function validateAgencyAssignment(
 
   if (
     value.employmentType !== EmploymentType.AGENCY &&
+    value.employmentType !== EmploymentType.STAFFING &&
     value.staffingCompanyId
   ) {
     context.addIssue({

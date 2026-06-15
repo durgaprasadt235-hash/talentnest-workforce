@@ -41,6 +41,7 @@ export function DeviceManagement() {
   const [assignments, setAssignments] = useState<Record<string, Assignment>>({})
   const [error, setError] = useState("")
   const [busyDeviceId, setBusyDeviceId] = useState("")
+  const [registering, setRegistering] = useState(false)
 
   const load = useCallback(async () => {
     const response = await fetch("/api/attendance/devices")
@@ -115,12 +116,43 @@ export function DeviceManagement() {
     await load()
   }
 
+  async function registerThisDevice() {
+    setRegistering(true)
+    setError("")
+    let installationId = localStorage.getItem("talentnest-kiosk-installation-id")
+    if (!installationId) {
+      installationId = crypto.randomUUID()
+      localStorage.setItem("talentnest-kiosk-installation-id", installationId)
+    }
+    const navigatorWithMemory = navigator as Navigator & { deviceMemory?: number }
+    const response = await fetch("/api/attendance/devices/request", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        fingerprint: {
+          installationId,
+          userAgent: navigator.userAgent,
+          platform: navigator.platform,
+          language: navigator.language,
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          hardwareConcurrency: navigator.hardwareConcurrency,
+          deviceMemory: navigatorWithMemory.deviceMemory,
+        },
+      }),
+    })
+    const data = await response.json()
+    setRegistering(false)
+    if (!response.ok) return setError(data.error)
+    await load()
+  }
+
   const pendingDevices = devices.filter((device) => device.status === "PENDING")
   const reviewedDevices = devices.filter((device) => device.status !== "PENDING")
 
   return (
     <div className="space-y-6">
-      <div>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
         <h1 className="text-3xl font-semibold tracking-tight">
           {canManage ? "Device Management" : "Device Status & Troubleshooting"}
         </h1>
@@ -129,6 +161,10 @@ export function DeviceManagement() {
             ? "Approve attendance kiosk requests and assign each device to a property."
             : "Review kiosk status, device codes, and last-seen activity for your properties."}
         </p>
+        </div>
+        <Button disabled={registering} onClick={() => void registerThisDevice()}>
+          {registering ? "Registering..." : "Register This Device"}
+        </Button>
       </div>
 
       {error && <p className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">{error}</p>}

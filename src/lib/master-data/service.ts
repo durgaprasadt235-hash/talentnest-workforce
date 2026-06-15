@@ -28,12 +28,12 @@ const organizationSelect = {
 } satisfies Prisma.OrganizationSelect
 const propertySelect = {
   id: true, organizationId: true, legalEntityId: true, name: true, code: true, status: true,
-  address: true, city: true, state: true, zipCode: true, timeZone: true,
+  brand: true, address: true, addressLine2: true, city: true, state: true, zipCode: true, timeZone: true,
   organization: { select: { id: true, name: true } },
   legalEntity: { select: { id: true, displayName: true } },
 } satisfies Prisma.PropertySelect
 const departmentSelect = {
-  id: true, organizationId: true, propertyId: true, name: true, code: true, status: true,
+  id: true, organizationId: true, propertyId: true, name: true, code: true, type: true, status: true,
   organization: { select: { id: true, name: true } },
   property: { select: { id: true, name: true } },
 } satisfies Prisma.DepartmentSelect
@@ -93,59 +93,80 @@ export async function assignOrganizationOwner(
   return owner
 }
 
-export async function listProperties() {
+export async function listProperties(actor: CurrentUser) {
+  const scope = actorScope(actor)
   const [properties, organizations, legalEntities] = await Promise.all([
-    prisma.property.findMany({ select: propertySelect, orderBy: { name: "asc" } }),
-    prisma.organization.findMany({ where: { status: RecordStatus.ACTIVE }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
-    prisma.legalEntity.findMany({ select: { id: true, organizationId: true, displayName: true }, orderBy: { displayName: "asc" } }),
+    prisma.property.findMany({ where: scope.property, select: propertySelect, orderBy: { name: "asc" } }),
+    prisma.organization.findMany({ where: { status: RecordStatus.ACTIVE, ...scope.organization }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
+    prisma.legalEntity.findMany({ where: scope.legalEntity, select: { id: true, organizationId: true, displayName: true }, orderBy: { displayName: "asc" } }),
   ])
   return { properties, options: { organizations, legalEntities } }
 }
 
-export async function createProperty(input: PropertyInput) {
+export async function createProperty(input: PropertyInput, actor: CurrentUser) {
+  assertOrganizationScope(actor, input.organizationId)
   await ensurePropertyAssignment(input, true)
   const item = await prisma.property.create({ data: normalizeProperty(input), select: propertySelect })
   await audit("CREATE_PROPERTY", "Property", item.id, item.organizationId, item.id)
   return item
 }
 
-export async function updateProperty(id: string, input: PropertyInput) {
+export async function updateProperty(id: string, input: PropertyInput, actor: CurrentUser) {
+  assertOrganizationScope(actor, input.organizationId)
   await ensurePropertyAssignment(input, false)
   const item = await prisma.property.update({ where: { id }, data: normalizeProperty(input), select: propertySelect })
   await audit("UPDATE_PROPERTY", "Property", item.id, item.organizationId, item.id)
   return item
 }
 
-export async function setPropertyStatus(id: string, status: RecordStatus) {
+export async function setPropertyStatus(id: string, status: RecordStatus, actor: CurrentUser) {
+  const existing = await prisma.property.findUnique({ where: { id }, select: { organizationId: true } })
+  if (!existing) throw new Error("Property not found.")
+  assertOrganizationScope(actor, existing.organizationId)
   const item = await prisma.property.update({ where: { id }, data: { status }, select: propertySelect })
   await audit(status === RecordStatus.ACTIVE ? "REACTIVATE_PROPERTY" : "DEACTIVATE_PROPERTY", "Property", item.id, item.organizationId, item.id)
   return item
 }
 
-export async function listDepartments() {
+export async function listDepartments(actor: CurrentUser) {
+  const scope = actorScope(actor)
   const [departments, organizations, properties] = await Promise.all([
-    prisma.department.findMany({ select: departmentSelect, orderBy: { name: "asc" } }),
-    prisma.organization.findMany({ where: { status: RecordStatus.ACTIVE }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
-    prisma.property.findMany({ where: { status: RecordStatus.ACTIVE }, select: { id: true, organizationId: true, name: true }, orderBy: { name: "asc" } }),
+    prisma.department.findMany({ where: scope.department, select: departmentSelect, orderBy: { name: "asc" } }),
+    prisma.organization.findMany({ where: { status: RecordStatus.ACTIVE, ...scope.organization }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
+    prisma.property.findMany({ where: { status: RecordStatus.ACTIVE, ...scope.property }, select: { id: true, organizationId: true, name: true }, orderBy: { name: "asc" } }),
   ])
   return { departments, options: { organizations, properties } }
 }
 
-export async function createDepartment(input: DepartmentInput) {
+export async function createDepartment(input: DepartmentInput, actor: CurrentUser) {
+  assertPropertyScope(actor, input.organizationId, input.propertyId)
   await ensureDepartmentAssignment(input)
-  const item = await prisma.department.create({ data: input, select: departmentSelect })
+  const item = await prisma.department.create({
+    data: {
+      ...input,
+      code: input.code || null,
+      roles: {
+        create: defaultDepartmentRoles.map((role) => ({ ...role, status: RecordStatus.ACTIVE })),
+      },
+    },
+    select: departmentSelect,
+  })
   await audit("CREATE_DEPARTMENT", "Department", item.id, item.organizationId, item.propertyId)
   return item
 }
 
-export async function updateDepartment(id: string, input: DepartmentInput) {
+export async function updateDepartment(id: string, input: DepartmentInput, actor: CurrentUser) {
+  assertPropertyScope(actor, input.organizationId, input.propertyId)
   await ensureDepartmentAssignment(input)
-  const item = await prisma.department.update({ where: { id }, data: input, select: departmentSelect })
+  const item = await prisma.department.update({ where: { id }, data: { ...input, code: input.code || null }, select: departmentSelect })
   await audit("UPDATE_DEPARTMENT", "Department", item.id, item.organizationId, item.propertyId)
   return item
 }
 
-export async function setDepartmentStatus(id: string, status: RecordStatus) {
+export async function setDepartmentStatus(id: string, status: RecordStatus, actor: CurrentUser) {
+  const existing = await prisma.department.findUnique({ where: { id }, select: { organizationId: true, propertyId: true } })
+  if (!existing) throw new Error("Department not found.")
+  assertPropertyScope(actor, existing.organizationId, existing.propertyId)
   const item = await prisma.department.update({ where: { id }, data: { status }, select: departmentSelect })
   await audit(status === RecordStatus.ACTIVE ? "REACTIVATE_DEPARTMENT" : "DEACTIVATE_DEPARTMENT", "Department", item.id, item.organizationId, item.propertyId)
   return item
@@ -191,9 +212,54 @@ async function ensureDepartmentAssignment(input: DepartmentInput) {
 }
 
 function normalizeProperty(input: PropertyInput) {
-  return { ...input, legalEntityId: input.legalEntityId || null, address: input.address || null, city: input.city || null, state: input.state || null, zipCode: input.zipCode || null }
+  return { ...input, code: input.code || null, brand: input.brand || null, legalEntityId: input.legalEntityId || null, address: input.address || null, addressLine2: input.addressLine2 || null, city: input.city || null, state: input.state || null, zipCode: input.zipCode || null }
+}
+
+function actorScope(actor: CurrentUser) {
+  if (actor.role === Role.PLATFORM_OWNER || actor.role === Role.PLATFORM_ADMIN) {
+    return { organization: {}, property: {}, legalEntity: {}, department: {} }
+  }
+  const organizationId = actor.organizationId ?? ""
+  const property =
+    actor.role === Role.PROPERTY_MANAGER
+      ? { id: { in: actor.propertyIds ?? [] } }
+      : { organizationId }
+  return {
+    organization: { id: organizationId },
+    property,
+    legalEntity: { organizationId },
+    department:
+      actor.role === Role.PROPERTY_MANAGER
+        ? { propertyId: { in: actor.propertyIds ?? [] } }
+        : { organizationId },
+  }
+}
+
+function assertOrganizationScope(actor: CurrentUser, organizationId: string) {
+  if (actor.role === Role.PLATFORM_OWNER || actor.role === Role.PLATFORM_ADMIN) return
+  if (actor.organizationId !== organizationId) throw new Error("Unauthorized.")
+}
+
+function assertPropertyScope(actor: CurrentUser, organizationId: string, propertyId: string) {
+  assertOrganizationScope(actor, organizationId)
+  if (
+    actor.role === Role.PROPERTY_MANAGER &&
+    !actor.propertyIds?.includes(propertyId)
+  ) {
+    throw new Error("This property is not assigned to the current property manager.")
+  }
 }
 
 function audit(action: string, entityType: string, entityId: string, organizationId: string, propertyId?: string) {
   return createAuditLog({ action, entityType, entityId, organizationId, propertyId })
 }
+
+const defaultDepartmentRoles = [
+  { name: "Front Desk Agent", code: "FRONT_DESK_AGENT", isManager: false, canApproveAttendance: false, canManageSchedule: false },
+  { name: "Night Auditor", code: "NIGHT_AUDITOR", isManager: false, canApproveAttendance: false, canManageSchedule: false },
+  { name: "Housekeeper", code: "HOUSEKEEPER", isManager: false, canApproveAttendance: false, canManageSchedule: false },
+  { name: "Maintenance Technician", code: "MAINTENANCE_TECH", isManager: false, canApproveAttendance: false, canManageSchedule: false },
+  { name: "Property Manager", code: "PROPERTY_MANAGER", isManager: true, canApproveAttendance: true, canManageSchedule: true },
+  { name: "Assistant General Manager", code: "ASSISTANT_GM", isManager: true, canApproveAttendance: true, canManageSchedule: true },
+  { name: "General Manager", code: "GENERAL_MANAGER", isManager: true, canApproveAttendance: true, canManageSchedule: true },
+]

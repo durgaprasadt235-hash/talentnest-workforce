@@ -25,6 +25,8 @@ type Item = {
   name: string
   slug?: string
   code?: string
+  brand?: string | null
+  type?: string
   status: "ACTIVE" | "INACTIVE"
   organizationStatus?: "ONBOARDING" | "ACTIVE" | "SUSPENDED" | "CANCELLED"
   legalBusinessName?: string | null
@@ -36,6 +38,7 @@ type Item = {
   billingState?: string | null
   billingZip?: string | null
   address?: string | null
+  addressLine2?: string | null
   city?: string | null
   state?: string | null
   zipCode?: string | null
@@ -71,7 +74,10 @@ type Form = {
   name: string
   slug: string
   code: string
+  brand: string
+  type: string
   address: string
+  addressLine2: string
   city: string
   state: string
   zipCode: string
@@ -80,7 +86,7 @@ type Form = {
 
 const emptyForm: Form = {
   organizationId: "", legalEntityId: "", propertyId: "", name: "", slug: "", code: "",
-  address: "", city: "", state: "", zipCode: "", timeZone: "America/New_York",
+  brand: "", type: "OTHER", address: "", addressLine2: "", city: "", state: "", zipCode: "", timeZone: "America/New_York",
 }
 const selectClass = "h-10 w-full rounded-lg border bg-background px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
 const config = {
@@ -161,7 +167,14 @@ export function DatabaseResourceList({ kind }: { kind: Kind }) {
 
   function startCreate() {
     setEditingId(null)
-    setForm(emptyForm)
+    setForm({
+      ...emptyForm,
+      organizationId: currentUser.organizationId ?? "",
+      propertyId:
+        currentUser.role === Role.PROPERTY_MANAGER && currentUser.propertyIds?.length === 1
+          ? currentUser.propertyIds[0]
+          : "",
+    })
     setOpen(true)
     setError("")
     setMessage("")
@@ -176,7 +189,10 @@ export function DatabaseResourceList({ kind }: { kind: Kind }) {
       name: item.name,
       slug: item.slug ?? "",
       code: item.code ?? "",
+      brand: item.brand ?? "",
+      type: item.type ?? "OTHER",
       address: item.address ?? "",
+      addressLine2: item.addressLine2 ?? "",
       city: item.city ?? "",
       state: item.state ?? "",
       zipCode: item.zipCode ?? "",
@@ -205,10 +221,10 @@ export function DatabaseResourceList({ kind }: { kind: Kind }) {
         : kind === "property"
           ? {
               organizationId: form.organizationId, legalEntityId: form.legalEntityId || null, name: form.name, code: form.code,
-              address: form.address || null, city: form.city || null, state: form.state || null,
+              brand: form.brand || null, address: form.address || null, addressLine2: form.addressLine2 || null, city: form.city || null, state: form.state || null,
               zipCode: form.zipCode || null, timeZone: form.timeZone,
             }
-          : { organizationId: form.organizationId, propertyId: form.propertyId, name: form.name, code: form.code }
+          : { organizationId: form.organizationId, propertyId: form.propertyId, name: form.name, code: form.code || null, type: form.type }
     try {
       const response = await fetch(editingId ? `${settings.endpoint}/${editingId}` : settings.endpoint, {
         method: editingId ? "PATCH" : "POST",
@@ -252,7 +268,7 @@ export function DatabaseResourceList({ kind }: { kind: Kind }) {
           <h1 className="text-3xl font-semibold tracking-tight">{settings.title}</h1>
           <p className="mt-2 text-sm text-muted-foreground">{settings.description}</p>
         </div>
-        {canManage && kind !== "organization" && <Button onClick={startCreate}><Plus /> Create {singular(settings.title)}</Button>}
+        {canManage && kind !== "organization" && <Button onClick={startCreate}><Plus /> {kind === "property" ? "Create Property" : "Create Department"}</Button>}
       </div>
       {message && <p className="text-sm text-emerald-700">{message}</p>}
       {error && <p className="text-sm text-destructive">{error}</p>}
@@ -301,14 +317,17 @@ export function DatabaseResourceList({ kind }: { kind: Kind }) {
               <SheetDescription>Enter the master record details below.</SheetDescription>
             </SheetHeader>
             <div className="space-y-4 px-4">
-              {kind !== "organization" && <Field label="Organization"><select className={selectClass} required value={form.organizationId} onChange={(event) => updateForm("organizationId", event.target.value)}><option value="">Select organization</option>{organizations.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field>}
+              {kind !== "organization" && <Field label="Organization"><select className={selectClass} required disabled={Boolean(currentUser.organizationId)} value={form.organizationId} onChange={(event) => updateForm("organizationId", event.target.value)}><option value="">Select organization</option>{organizations.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field>}
               {kind === "property" && <Field label="Legal Entity / LLC"><select className={selectClass} required={!editingId && availableLegalEntities.length > 0} value={form.legalEntityId} onChange={(event) => updateForm("legalEntityId", event.target.value)}><option value="">{availableLegalEntities.length ? "Select legal entity" : "No legal entities configured"}</option>{availableLegalEntities.map((item) => <option key={item.id} value={item.id}>{item.displayName}</option>)}</select></Field>}
               {kind === "department" && <Field label="Property"><select className={selectClass} required value={form.propertyId} onChange={(event) => updateForm("propertyId", event.target.value)}><option value="">Select property</option>{availableProperties.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field>}
               <Field label="Name"><Input required value={form.name} onChange={(event) => updateForm("name", event.target.value)} /></Field>
               {kind === "organization" && <Field label="Slug"><Input required value={form.slug} onChange={(event) => updateForm("slug", event.target.value)} /></Field>}
-              {kind !== "organization" && <Field label="Code"><Input required value={form.code} onChange={(event) => updateForm("code", event.target.value)} /></Field>}
+              {kind !== "organization" && <Field label="Code (optional)"><Input value={form.code} onChange={(event) => updateForm("code", event.target.value)} /></Field>}
+              {kind === "department" && <Field label="Department type"><select className={selectClass} value={form.type} onChange={(event) => updateForm("type", event.target.value)}>{["FRONT_DESK", "HOUSEKEEPING", "MAINTENANCE", "NIGHT_AUDIT", "MANAGEMENT", "FINANCE", "OTHER"].map((type) => <option key={type} value={type}>{type.replaceAll("_", " ")}</option>)}</select></Field>}
               {kind === "property" && <>
-                <Field label="Address"><Input value={form.address} onChange={(event) => updateForm("address", event.target.value)} /></Field>
+                <Field label="Brand"><Input value={form.brand} onChange={(event) => updateForm("brand", event.target.value)} /></Field>
+                <Field label="Address line 1"><Input value={form.address} onChange={(event) => updateForm("address", event.target.value)} /></Field>
+                <Field label="Address line 2"><Input value={form.addressLine2} onChange={(event) => updateForm("addressLine2", event.target.value)} /></Field>
                 <div className="grid grid-cols-2 gap-3"><Field label="City"><Input value={form.city} onChange={(event) => updateForm("city", event.target.value)} /></Field><Field label="State"><Input value={form.state} onChange={(event) => updateForm("state", event.target.value)} /></Field></div>
                 <Field label="ZIP Code"><Input value={form.zipCode} onChange={(event) => updateForm("zipCode", event.target.value)} /></Field>
                 <Field label="Time Zone"><Input required value={form.timeZone} onChange={(event) => updateForm("timeZone", event.target.value)} /></Field>

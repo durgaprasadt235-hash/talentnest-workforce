@@ -1,10 +1,11 @@
 import type { Metadata } from "next"
-import { ResourcePage } from "@/components/shared/resource-page"
-import { pageConfig } from "@/lib/page-config"
+import { ScheduleManagement } from "@/components/schedules/schedule-management"
+import { PermissionGuard } from "@/components/rbac/permission-guard"
+import { FeatureLock } from "@/components/features/feature-lock"
 import { Permission } from "@/src/lib/rbac/permissions"
 import { FeatureKey } from "@/src/lib/features/feature-keys"
 
 export const metadata: Metadata = { title: "Schedules" }
 export default function Page() {
-  return <ResourcePage title={pageConfig.schedules} requiredPermission={Permission.VIEW_SCHEDULES} requiredFeature={FeatureKey.SCHEDULING} />
+  return <PermissionGuard permission={Permission.VIEW_SCHEDULES}><FeatureLock feature={FeatureKey.SCHEDULING}><ScheduleManagement /></FeatureLock></PermissionGuard>
 }

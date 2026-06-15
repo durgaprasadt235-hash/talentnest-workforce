@@ -8,10 +8,10 @@ type RouteContext = { params: Promise<{ id: string }> }
 
 export async function PATCH(request: Request, { params }: RouteContext) {
   try {
-    await requireServerPermission(request, Permission.MANAGE_EMPLOYEES)
+    const user = await requireServerPermission(request, Permission.MANAGE_EMPLOYEES)
     const { id } = await params
     const input = await parseJsonBody(request, updateEmployeeSchema)
-    return Response.json({ employee: await updateEmployee(id, input) })
+    return Response.json({ employee: await updateEmployee(id, input, user) })
   } catch (error) {
     return errorResponse(error)
   }
@@ -19,9 +19,9 @@ export async function PATCH(request: Request, { params }: RouteContext) {
 
 export async function DELETE(request: Request, { params }: RouteContext) {
   try {
-    await requireServerPermission(request, Permission.MANAGE_EMPLOYEES)
+    const user = await requireServerPermission(request, Permission.MANAGE_EMPLOYEES)
     const { id } = await params
-    return Response.json({ employee: await deleteEmployee(id) })
+    return Response.json({ employee: await deleteEmployee(id, user) })
   } catch (error) {
     return errorResponse(error)
   }

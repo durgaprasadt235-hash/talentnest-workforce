@@ -9,10 +9,10 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    await requireServerPermission(request, Permission.MANAGE_EMPLOYEES)
+    const user = await requireServerPermission(request, Permission.MANAGE_EMPLOYEES)
     const { id } = await params
     const { reason } = await parseJsonBody(request, terminateEmployeeSchema)
-    return Response.json({ employee: await terminateEmployee(id, reason) })
+    return Response.json({ employee: await terminateEmployee(id, reason, user) })
   } catch (error) {
     return errorResponse(error)
   }

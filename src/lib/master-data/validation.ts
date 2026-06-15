@@ -1,4 +1,4 @@
-import { RecordStatus } from "@prisma/client"
+import { DepartmentType, RecordStatus } from "@prisma/client"
 import { z } from "zod"
 
 const requiredText = z.string().trim().min(1).max(200)
@@ -14,9 +14,11 @@ export const propertySchema = z.object({
   organizationId: requiredText,
   legalEntityId: z.string().trim().min(1).nullable().optional(),
   name: requiredText,
-  code: z.string().trim().min(1).max(50),
+  code: z.string().trim().max(50).nullable().optional(),
+  brand: optionalText,
   status: z.enum(RecordStatus).optional(),
   address: optionalText,
+  addressLine2: optionalText,
   city: optionalText,
   state: optionalText,
   zipCode: optionalText,
@@ -39,7 +41,8 @@ export const departmentSchema = z.object({
   organizationId: requiredText,
   propertyId: requiredText,
   name: requiredText,
-  code: z.string().trim().min(1).max(50),
+  code: z.string().trim().max(50).nullable().optional(),
+  type: z.enum(DepartmentType).optional(),
   status: z.enum(RecordStatus).optional(),
 })
 

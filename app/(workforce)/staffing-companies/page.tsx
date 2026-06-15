@@ -1,10 +1,11 @@
 import type { Metadata } from "next"
-import { ResourcePage } from "@/components/shared/resource-page"
-import { pageConfig } from "@/lib/page-config"
+import { StaffingCompanyManagement } from "@/components/staffing/staffing-company-management"
+import { PermissionGuard } from "@/components/rbac/permission-guard"
 import { Permission } from "@/src/lib/rbac/permissions"
 import { FeatureKey } from "@/src/lib/features/feature-keys"
+import { FeatureLock } from "@/components/features/feature-lock"
 
 export const metadata: Metadata = { title: "Staffing Companies" }
 export default function Page() {
-  return <ResourcePage title={pageConfig["staffing-companies"]} requiredPermission={Permission.VIEW_STAFFING_COMPANIES} requiredFeature={FeatureKey.STAFFING} />
+  return <PermissionGuard permission={Permission.VIEW_STAFFING_COMPANIES}><FeatureLock feature={FeatureKey.STAFFING}><StaffingCompanyManagement /></FeatureLock></PermissionGuard>
 }

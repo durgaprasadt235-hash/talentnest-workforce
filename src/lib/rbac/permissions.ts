@@ -67,13 +67,19 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
   [Role.PLATFORM_ADMIN]: allPermissions,
   [Role.ORGANIZATION_OWNER]: [
     ...allViewPermissions,
+    Permission.MANAGE_PROPERTIES,
+    Permission.MANAGE_DEPARTMENTS,
+    Permission.MANAGE_EMPLOYEES,
+    Permission.MANAGE_STAFFING_COMPANIES,
+    Permission.MANAGE_SCHEDULES,
     Permission.MANAGE_USERS,
     Permission.MANAGE_LEGAL_ENTITIES,
     Permission.MANAGE_DEVICES,
     Permission.MANAGE_CORPORATE_WEEKLY_ATTENDANCE,
   ],
   [Role.REGIONAL_MANAGER]: [
-    Permission.VIEW_PROPERTIES, Permission.VIEW_DEPARTMENTS, Permission.VIEW_EMPLOYEES,
+    Permission.VIEW_PROPERTIES, Permission.MANAGE_PROPERTIES, Permission.VIEW_DEPARTMENTS,
+    Permission.MANAGE_DEPARTMENTS, Permission.VIEW_EMPLOYEES,
     Permission.MANAGE_EMPLOYEES, Permission.VIEW_SCHEDULES, Permission.MANAGE_SCHEDULES,
     Permission.VIEW_ATTENDANCE, Permission.MANAGE_ATTENDANCE, Permission.VIEW_WEEKLY_ATTENDANCE,
     Permission.VIEW_TIMESHEETS, Permission.VIEW_USERS,
@@ -118,6 +124,7 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
   [Role.PROPERTY_MANAGER]: [
     Permission.VIEW_PROPERTIES,
     Permission.VIEW_DEPARTMENTS,
+    Permission.MANAGE_DEPARTMENTS,
     Permission.VIEW_EMPLOYEES,
     Permission.MANAGE_EMPLOYEES,
     Permission.VIEW_SCHEDULES,

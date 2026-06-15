@@ -62,6 +62,7 @@ const item = {
   roles: { label: "Roles", href: "/roles", icon: ShieldCheck },
   auditLogs: { label: "Audit Logs", href: "/audit-logs", icon: ScrollText },
   deviceSupport: { label: "Device Support", href: "/devices", icon: MonitorSmartphone },
+  kioskSetup: { label: "Kiosk Setup", href: "/devices", icon: MonitorSmartphone, feature: FeatureKey.KIOSK },
   platformAnalytics: { label: "Platform Analytics", href: "/platform-analytics", icon: BarChart3 },
 } satisfies Record<string, NavItem>
 
@@ -77,7 +78,7 @@ const roleNavigation: Record<RoleType, NavSection[]> = {
     { label: "Workforce", items: [item.employees, item.staffingCompanies] },
     { label: "Operations", items: [item.kiosk, item.weeklyAttendance] },
     { label: "Finance", items: [item.invoices, item.payments] },
-    { label: "Settings", items: [item.users, item.auditLogs] },
+    { label: "Settings", items: [item.users, item.roles, item.auditLogs, item.kioskSetup] },
   ],
   [Role.ORGANIZATION_OWNER]: [
     { items: [item.dashboard] },
@@ -104,7 +105,7 @@ const roleNavigation: Record<RoleType, NavSection[]> = {
   [Role.PROPERTY_MANAGER]: [
     { items: [item.dashboard] },
     { label: "Workforce", items: [item.employees] },
-    { label: "Operations", items: [item.schedules, item.attendance, item.kiosk, item.weeklyAttendance, item.timesheets] },
+    { label: "Operations", items: [item.schedules, item.attendance, item.kiosk, item.weeklyAttendance, item.timesheets, item.kioskSetup] },
   ],
   [Role.FINANCE_USER]: [
     { items: [item.dashboard] },

@@ -21,7 +21,7 @@ import { hasPermission } from "@/src/lib/rbac/guards"
 import { mockRoleHeaders } from "@/src/lib/rbac/mock-auth"
 import { Permission } from "@/src/lib/rbac/permissions"
 
-type EmploymentType = "DIRECT" | "AGENCY" | "TEMPORARY" | "SEASONAL"
+type EmploymentType = "DIRECT" | "STAFFING" | "AGENCY" | "TEMPORARY" | "SEASONAL"
 type RecordStatus =
   | "ACTIVE"
   | "INACTIVE"
@@ -35,6 +35,7 @@ type DepartmentOption = NamedOption & {
   organizationId: string
   propertyId: string
 }
+type DepartmentRoleOption = NamedOption & { departmentId: string }
 type StaffingCompanyOption = {
   id: string
   organizationId: string
@@ -45,18 +46,24 @@ type Employee = {
   organizationId: string
   propertyId: string | null
   departmentId: string | null
+  departmentRoleId: string | null
   staffingCompanyId: string | null
   employeeNumber: string
   firstName: string
   lastName: string
   employmentType: EmploymentType
   position: string | null
+  phone: string | null
+  email: string | null
+  payRate: string | null
+  hireDate: string | null
   status: RecordStatus
   terminatedAt: string | null
   terminationReason: string | null
   organization: NamedOption
   property: NamedOption | null
   department: NamedOption | null
+  departmentRole: NamedOption | null
   staffingCompany: { id: string; displayName: string } | null
 }
 type EmployeeData = {
@@ -65,6 +72,7 @@ type EmployeeData = {
     organizations: NamedOption[]
     properties: PropertyOption[]
     departments: DepartmentOption[]
+    departmentRoles: DepartmentRoleOption[]
     staffingCompanies: StaffingCompanyOption[]
   }
 }
@@ -72,12 +80,17 @@ type EmployeeForm = {
   organizationId: string
   propertyId: string
   departmentId: string
+  departmentRoleId: string
   staffingCompanyId: string
   employeeNumber: string
   firstName: string
   lastName: string
   employmentType: EmploymentType
   position: string
+  phone: string
+  email: string
+  payRate: string
+  hireDate: string
   pin: string
 }
 
@@ -87,6 +100,7 @@ const emptyData: EmployeeData = {
     organizations: [],
     properties: [],
     departments: [],
+    departmentRoles: [],
     staffingCompanies: [],
   },
 }
@@ -95,17 +109,23 @@ const emptyForm: EmployeeForm = {
   organizationId: "",
   propertyId: "",
   departmentId: "",
+  departmentRoleId: "",
   staffingCompanyId: "",
   employeeNumber: "",
   firstName: "",
   lastName: "",
   employmentType: "DIRECT",
   position: "",
+  phone: "",
+  email: "",
+  payRate: "",
+  hireDate: "",
   pin: "",
 }
 
 const employmentTypes: EmploymentType[] = [
   "DIRECT",
+  "STAFFING",
   "AGENCY",
   "TEMPORARY",
   "SEASONAL",
@@ -171,6 +191,9 @@ export function EmployeeManagement() {
   const staffingCompanies = data.options.staffingCompanies.filter(
     (item) => item.organizationId === form.organizationId,
   )
+  const departmentRoles = data.options.departmentRoles.filter(
+    (item) => item.departmentId === form.departmentId,
+  )
 
   function updateForm<K extends keyof EmployeeForm>(
     key: K,
@@ -181,10 +204,15 @@ export function EmployeeManagement() {
       if (key === "organizationId") {
         next.propertyId = ""
         next.departmentId = ""
+        next.departmentRoleId = ""
         next.staffingCompanyId = ""
       }
-      if (key === "propertyId") next.departmentId = ""
-      if (key === "employmentType" && value !== "AGENCY") {
+      if (key === "propertyId") {
+        next.departmentId = ""
+        next.departmentRoleId = ""
+      }
+      if (key === "departmentId") next.departmentRoleId = ""
+      if (key === "employmentType" && value !== "AGENCY" && value !== "STAFFING") {
         next.staffingCompanyId = ""
       }
       return next
@@ -206,12 +234,17 @@ export function EmployeeManagement() {
       organizationId: employee.organizationId,
       propertyId: employee.propertyId ?? "",
       departmentId: employee.departmentId ?? "",
+      departmentRoleId: employee.departmentRoleId ?? "",
       staffingCompanyId: employee.staffingCompanyId ?? "",
       employeeNumber: employee.employeeNumber,
       firstName: employee.firstName,
       lastName: employee.lastName,
       employmentType: employee.employmentType,
       position: employee.position ?? "",
+      phone: employee.phone ?? "",
+      email: employee.email ?? "",
+      payRate: employee.payRate ?? "",
+      hireDate: employee.hireDate?.slice(0, 10) ?? "",
       pin: "",
     })
     setPinEmployee(null)
@@ -241,6 +274,10 @@ export function EmployeeManagement() {
           departmentId: form.departmentId || null,
           staffingCompanyId: form.staffingCompanyId || null,
           position: form.position || null,
+          phone: form.phone || null,
+          email: form.email || null,
+          payRate: form.payRate ? Number(form.payRate) : null,
+          hireDate: form.hireDate || null,
         }),
       },
     )
@@ -345,7 +382,7 @@ export function EmployeeManagement() {
         </div>
         {canManage && (
           <Button onClick={startCreate}>
-            <Plus /> New employee
+            <Plus /> Add Employee
           </Button>
         )}
       </div>
@@ -390,6 +427,10 @@ export function EmployeeManagement() {
                 onChange={(event) => updateForm("position", event.target.value)}
                 placeholder="Position"
               />
+              <Input value={form.phone} onChange={(event) => updateForm("phone", event.target.value)} placeholder="Phone (optional)" />
+              <Input type="email" value={form.email} onChange={(event) => updateForm("email", event.target.value)} placeholder="Email (optional)" />
+              <Input type="number" min="0" step="0.01" value={form.payRate} onChange={(event) => updateForm("payRate", event.target.value)} placeholder="Pay rate (optional)" />
+              <Input type="date" value={form.hireDate} onChange={(event) => updateForm("hireDate", event.target.value)} />
               {!editingId && (
                 <Input
                   value={form.pin}
@@ -445,7 +486,18 @@ export function EmployeeManagement() {
                   <option key={item.id} value={item.id}>{item.name}</option>
                 ))}
               </select>
-              {form.employmentType === "AGENCY" && (
+              <select
+                className={selectClass}
+                value={form.departmentRoleId}
+                onChange={(event) => updateForm("departmentRoleId", event.target.value)}
+                disabled={!form.departmentId}
+              >
+                <option value="">No department role</option>
+                {departmentRoles.map((item) => (
+                  <option key={item.id} value={item.id}>{item.name}</option>
+                ))}
+              </select>
+              {(form.employmentType === "AGENCY" || form.employmentType === "STAFFING") && (
                 <select
                   className={selectClass}
                   value={form.staffingCompanyId}

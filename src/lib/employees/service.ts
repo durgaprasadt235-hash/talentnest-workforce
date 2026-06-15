@@ -12,6 +12,8 @@ import type {
   UpdateEmployeeInput,
 } from "@/src/lib/employees/validation"
 import { prisma } from "@/src/lib/prisma"
+import type { CurrentUser } from "@/src/lib/rbac/current-user"
+import { Role } from "@/src/lib/rbac/roles"
 import { hashPin, verifyPin } from "@/src/lib/security/pin"
 
 const DUPLICATE_PIN_ERROR =
@@ -22,12 +24,17 @@ const employeeSelect = {
   organizationId: true,
   propertyId: true,
   departmentId: true,
+  departmentRoleId: true,
   staffingCompanyId: true,
   employeeNumber: true,
   firstName: true,
   lastName: true,
   employmentType: true,
   position: true,
+  phone: true,
+  email: true,
+  payRate: true,
+  hireDate: true,
   status: true,
   terminatedAt: true,
   terminationReason: true,
@@ -36,36 +43,45 @@ const employeeSelect = {
   organization: { select: { id: true, name: true } },
   property: { select: { id: true, name: true } },
   department: { select: { id: true, name: true } },
+  departmentRole: { select: { id: true, name: true } },
   staffingCompany: { select: { id: true, displayName: true } },
 } satisfies Prisma.EmployeeSelect
 
 export async function listEmployees(
   status: EmployeeStatus | "ALL" = EmployeeStatus.ACTIVE,
+  actor?: CurrentUser,
 ) {
-  const [employees, organizations, properties, departments, staffingCompanies] =
+  const where = employeeScope(actor)
+  const [employees, organizations, properties, departments, departmentRoles, staffingCompanies] =
     await Promise.all([
       prisma.employee.findMany({
-        where: status === "ALL" ? undefined : { status },
+        where: { ...where, ...(status === "ALL" ? {} : { status }) },
         select: employeeSelect,
         orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
       }),
       prisma.organization.findMany({
-        where: { status: RecordStatus.ACTIVE },
+        where: { status: RecordStatus.ACTIVE, ...(actor?.organizationId ? { id: actor.organizationId } : {}) },
         select: { id: true, name: true },
         orderBy: { name: "asc" },
       }),
       prisma.property.findMany({
-        where: { status: RecordStatus.ACTIVE },
+        where: { status: RecordStatus.ACTIVE, ...propertyScope(actor) },
         select: { id: true, organizationId: true, name: true },
         orderBy: { name: "asc" },
       }),
       prisma.department.findMany({
-        where: { status: RecordStatus.ACTIVE },
+        where: { status: RecordStatus.ACTIVE, ...departmentScope(actor) },
         select: { id: true, organizationId: true, propertyId: true, name: true },
+        orderBy: { name: "asc" },
+      }),
+      prisma.departmentRole.findMany({
+        where: { status: RecordStatus.ACTIVE, department: departmentScope(actor) },
+        select: { id: true, departmentId: true, name: true },
         orderBy: { name: "asc" },
       }),
       prisma.staffingCompany.findMany({
         where: {
+          ...(actor?.organizationId ? { organizationId: actor.organizationId } : {}),
           status: {
             in: [StaffingCompanyStatus.ACTIVE, StaffingCompanyStatus.PENDING],
           },
@@ -77,11 +93,12 @@ export async function listEmployees(
 
   return {
     employees,
-    options: { organizations, properties, departments, staffingCompanies },
+    options: { organizations, properties, departments, departmentRoles, staffingCompanies },
   }
 }
 
-export async function createEmployee(input: CreateEmployeeInput) {
+export async function createEmployee(input: CreateEmployeeInput, actor?: CurrentUser) {
+  assertEmployeeScope(actor, input.organizationId, input.propertyId)
   await validateAssignments(input)
   await ensureUniqueActivePin(input.organizationId, input.pin)
 
@@ -105,7 +122,8 @@ export async function createEmployee(input: CreateEmployeeInput) {
   return employee
 }
 
-export async function updateEmployee(id: string, input: UpdateEmployeeInput) {
+export async function updateEmployee(id: string, input: UpdateEmployeeInput, actor?: CurrentUser) {
+  assertEmployeeScope(actor, input.organizationId, input.propertyId)
   await validateAssignments(input)
 
   const employee = await prisma.employee.update({
@@ -126,12 +144,13 @@ export async function updateEmployee(id: string, input: UpdateEmployeeInput) {
   return employee
 }
 
-export async function setEmployeeStatus(id: string, status: EmployeeStatus) {
+export async function setEmployeeStatus(id: string, status: EmployeeStatus, actor?: CurrentUser) {
   const existing = await prisma.employee.findUnique({
     where: { id },
-    select: { organizationId: true, clockPinHash: true },
+    select: { organizationId: true, propertyId: true, clockPinHash: true },
   })
   if (!existing) throw new Error("Employee not found.")
+  assertEmployeeScope(actor, existing.organizationId, existing.propertyId)
   if (status === EmployeeStatus.ACTIVE) {
     if (!existing.clockPinHash) {
       throw new Error("Assign a 4-digit PIN before reactivating this employee.")
@@ -164,7 +183,8 @@ export async function setEmployeeStatus(id: string, status: EmployeeStatus) {
   return employee
 }
 
-export async function terminateEmployee(id: string, reason: string) {
+export async function terminateEmployee(id: string, reason: string, actor?: CurrentUser) {
+  await assertExistingEmployeeScope(id, actor)
   const employee = await prisma.employee.update({
     where: { id },
     data: {
@@ -188,12 +208,13 @@ export async function terminateEmployee(id: string, reason: string) {
   return employee
 }
 
-export async function resetEmployeePin(id: string, pin: string) {
+export async function resetEmployeePin(id: string, pin: string, actor?: CurrentUser) {
   const existing = await prisma.employee.findUnique({
     where: { id },
-    select: { organizationId: true },
+    select: { organizationId: true, propertyId: true },
   })
   if (!existing) throw new Error("Employee not found.")
+  assertEmployeeScope(actor, existing.organizationId, existing.propertyId)
   await ensureUniqueActivePin(existing.organizationId, pin, id)
 
   const employee = await prisma.employee.update({
@@ -214,7 +235,8 @@ export async function resetEmployeePin(id: string, pin: string) {
   return employee
 }
 
-export async function deleteEmployee(id: string) {
+export async function deleteEmployee(id: string, actor?: CurrentUser) {
+  await assertExistingEmployeeScope(id, actor)
   return prisma.$transaction(async (transaction) => {
     const employee = await transaction.employee.findUnique({
       where: { id },
@@ -276,9 +298,15 @@ function normalizeEmployeeInput(input: CreateEmployeeInput | UpdateEmployeeInput
     employmentType: input.employmentType,
     propertyId: input.propertyId || null,
     departmentId: input.departmentId || null,
+    departmentRoleId: input.departmentRoleId || null,
     position: input.position || null,
+    phone: input.phone || null,
+    email: input.email || null,
+    payRate: input.payRate ?? null,
+    hireDate: input.hireDate ? new Date(input.hireDate) : null,
     staffingCompanyId:
-      input.employmentType === EmploymentType.AGENCY
+      input.employmentType === EmploymentType.AGENCY ||
+      input.employmentType === EmploymentType.STAFFING
         ? input.staffingCompanyId || null
         : null,
   }
@@ -309,7 +337,7 @@ async function ensureUniqueActivePin(
 async function validateAssignments(
   input: CreateEmployeeInput | UpdateEmployeeInput,
 ) {
-  const [organization, property, department, staffingCompany] =
+  const [organization, property, department, departmentRole, staffingCompany] =
     await Promise.all([
       prisma.organization.findFirst({
         where: { id: input.organizationId, status: RecordStatus.ACTIVE },
@@ -329,6 +357,15 @@ async function validateAssignments(
               id: input.departmentId,
               organizationId: input.organizationId,
               propertyId: input.propertyId ?? undefined,
+              status: RecordStatus.ACTIVE,
+            },
+          })
+        : null,
+      input.departmentRoleId
+        ? prisma.departmentRole.findFirst({
+            where: {
+              id: input.departmentRoleId,
+              departmentId: input.departmentId ?? undefined,
               status: RecordStatus.ACTIVE,
             },
           })
@@ -359,7 +396,42 @@ async function validateAssignments(
   if (input.departmentId && !department) {
     throw new Error("Department does not belong to the selected property.")
   }
+  if (input.departmentRoleId && !departmentRole) {
+    throw new Error("Department role does not belong to the selected department.")
+  }
   if (input.staffingCompanyId && !staffingCompany) {
     throw new Error("Staffing company does not belong to the organization.")
   }
+}
+
+function employeeScope(actor?: CurrentUser): Prisma.EmployeeWhereInput {
+  if (!actor || actor.role === Role.PLATFORM_OWNER || actor.role === Role.PLATFORM_ADMIN) return {}
+  if (actor.role === Role.PROPERTY_MANAGER) return { propertyId: { in: actor.propertyIds ?? [] } }
+  return { organizationId: actor.organizationId ?? "" }
+}
+
+function propertyScope(actor?: CurrentUser): Prisma.PropertyWhereInput {
+  if (!actor || actor.role === Role.PLATFORM_OWNER || actor.role === Role.PLATFORM_ADMIN) return {}
+  if (actor.role === Role.PROPERTY_MANAGER) return { id: { in: actor.propertyIds ?? [] } }
+  return { organizationId: actor.organizationId ?? "" }
+}
+
+function departmentScope(actor?: CurrentUser): Prisma.DepartmentWhereInput {
+  if (!actor || actor.role === Role.PLATFORM_OWNER || actor.role === Role.PLATFORM_ADMIN) return {}
+  if (actor.role === Role.PROPERTY_MANAGER) return { propertyId: { in: actor.propertyIds ?? [] } }
+  return { organizationId: actor.organizationId ?? "" }
+}
+
+function assertEmployeeScope(actor: CurrentUser | undefined, organizationId: string, propertyId?: string | null) {
+  if (!actor || actor.role === Role.PLATFORM_OWNER || actor.role === Role.PLATFORM_ADMIN) return
+  if (actor.organizationId !== organizationId) throw new Error("Unauthorized.")
+  if (actor.role === Role.PROPERTY_MANAGER && (!propertyId || !actor.propertyIds?.includes(propertyId))) {
+    throw new Error("This property is not assigned to the current property manager.")
+  }
+}
+
+async function assertExistingEmployeeScope(id: string, actor?: CurrentUser) {
+  const employee = await prisma.employee.findUnique({ where: { id }, select: { organizationId: true, propertyId: true } })
+  if (!employee) throw new Error("Employee not found.")
+  assertEmployeeScope(actor, employee.organizationId, employee.propertyId)
 }

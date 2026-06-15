@@ -8,9 +8,9 @@ type Context = { params: Promise<{ id: string }> }
 
 export async function PATCH(request: Request, { params }: Context) {
   try {
-    await requireServerPermission(request, Permission.MANAGE_PROPERTIES)
+    const user = await requireServerPermission(request, Permission.MANAGE_PROPERTIES)
     const input = await parseJsonBody(request, propertySchema)
-    return Response.json({ property: await updateProperty((await params).id, input) })
+    return Response.json({ property: await updateProperty((await params).id, input, user) })
   } catch (error) {
     return errorResponse(error)
   }
