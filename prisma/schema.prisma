@@ -191,6 +191,11 @@ enum AttendanceCorrectionStatus {
   REJECTED
 }
 
+enum AuditType {
+  PLATFORM
+  ORGANIZATION
+}
+
 enum WeeklyAttendanceInvoiceType {
   DIRECT
   STAFFING
@@ -865,8 +870,11 @@ model WeeklyAttendanceLine {
 
 model AuditLog {
   id             String   @id @default(cuid())
+  auditType      AuditType @default(ORGANIZATION)
   organizationId String?
   propertyId     String?
+  departmentId   String?
+  employeeId     String?
   userId         String?
   action         String
   entityType     String
@@ -880,5 +888,10 @@ model AuditLog {
 
   @@index([organizationId])
   @@index([propertyId])
+  @@index([departmentId])
+  @@index([employeeId])
+  @@index([auditType, createdAt])
+  @@index([action])
+  @@index([createdAt])
   @@index([entityType, entityId])
 }

@@ -1,4 +1,5 @@
 import {
+  AuditType,
   EmployeeStatus,
   EmploymentType,
   Prisma,
@@ -118,6 +119,7 @@ export async function createEmployee(input: CreateEmployeeInput, actor?: Current
     entityId: employee.id,
     organizationId: employee.organizationId,
     propertyId: employee.propertyId ?? undefined,
+    departmentId: employee.departmentId ?? undefined,
     metadata: { employeeNumber: employee.employeeNumber },
   })
 
@@ -155,6 +157,7 @@ export async function updateEmployee(id: string, input: UpdateEmployeeInput, act
     entityId: employee.id,
     organizationId: employee.organizationId,
     propertyId: employee.propertyId ?? undefined,
+    departmentId: employee.departmentId ?? undefined,
     metadata: { employeeNumber: employee.employeeNumber },
   })
 
@@ -194,6 +197,7 @@ export async function setEmployeeStatus(id: string, status: EmployeeStatus, acto
     entityId: employee.id,
     organizationId: employee.organizationId,
     propertyId: employee.propertyId ?? undefined,
+    departmentId: employee.departmentId ?? undefined,
     metadata: { employeeNumber: employee.employeeNumber },
   })
 
@@ -219,6 +223,7 @@ export async function terminateEmployee(id: string, reason: string, actor?: Curr
     entityId: employee.id,
     organizationId: employee.organizationId,
     propertyId: employee.propertyId ?? undefined,
+    departmentId: employee.departmentId ?? undefined,
     metadata: { employeeNumber: employee.employeeNumber, reason },
   })
 
@@ -247,6 +252,7 @@ export async function resetEmployeePin(id: string, pin: string, actor?: CurrentU
     entityId: employee.id,
     organizationId: employee.organizationId,
     propertyId: employee.propertyId ?? undefined,
+    departmentId: employee.departmentId ?? undefined,
     metadata: { employeeNumber: employee.employeeNumber },
   })
 
@@ -263,6 +269,7 @@ export async function deleteEmployee(id: string, actor?: CurrentUser) {
         employeeNumber: true,
         organizationId: true,
         propertyId: true,
+        departmentId: true,
         _count: {
           select: {
             shifts: true,
@@ -293,10 +300,13 @@ export async function deleteEmployee(id: string, actor?: CurrentUser) {
     await transaction.auditLog.create({
       data: {
         action: "DELETE_EMPLOYEE",
+        auditType: AuditType.ORGANIZATION,
         entityType: "Employee",
         entityId: employee.id,
         organizationId: employee.organizationId,
         propertyId: employee.propertyId,
+        departmentId: employee.departmentId,
+        employeeId: employee.id,
         metadata: { employeeNumber: employee.employeeNumber },
       },
     })

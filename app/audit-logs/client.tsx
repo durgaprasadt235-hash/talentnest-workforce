@@ -1,37 +1,33 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useId, useMemo, useState } from "react"
+import { Download, RefreshCw, Search, X } from "lucide-react"
 
+import { useCurrentUser } from "@/components/rbac/current-user-provider"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { Table, TableCell, TableHead } from "@/components/ui/table"
+import { Role } from "@/src/lib/rbac/roles"
 
-type Named = { id: string; name: string }
-type Person = { id: string; firstName: string; lastName: string; role?: string; employeeNumber?: string }
+type Option = { id: string; name?: string; firstName?: string; lastName?: string; role?: string; employeeNumber?: string }
 type Audit = {
   id: string
   action: string
   entityType: string
   entityId: string | null
+  organizationId: string | null
+  propertyId: string | null
+  departmentId: string | null
+  employeeId: string | null
+  userId: string | null
   metadata: Record<string, unknown> | null
   createdAt: string
-  organization: Named | null
-  property: Named | null
-  user: Person | null
-  employee: Person | null
-}
-type Filters = {
-  action: string
-  entity: string
-  employeeId: string
-  propertyId: string
-  userId: string
-  role: string
-  message: string
-  dateFrom: string
-  dateTo: string
+  organization: Option | null
+  property: Option | null
+  user: Option | null
+  employee: Option | null
 }
 type AuditResponse = {
   records: Audit[]
@@ -42,151 +38,192 @@ type AuditResponse = {
   options: {
     actions: string[]
     entities: string[]
-    employees: Person[]
-    properties: Named[]
-    users: Person[]
+    properties: Option[]
+    users: Option[]
+    employees: Option[]
     roles: string[]
   }
 }
+type Filters = {
+  action: string
+  entity: string
+  propertyId: string
+  employeeId: string
+  userId: string
+  role: string
+  message: string
+  dateFrom: string
+  dateTo: string
+  search: string
+}
 
 const emptyFilters: Filters = {
-  action: "", entity: "", employeeId: "", propertyId: "", userId: "",
-  role: "", message: "", dateFrom: "", dateTo: "",
+  action: "", entity: "", propertyId: "", employeeId: "", userId: "",
+  role: "", message: "", dateFrom: "", dateTo: "", search: "",
 }
-const emptyResponse: AuditResponse = {
+const emptyData: AuditResponse = {
   records: [], totalCount: 0, page: 1, pageSize: 10, totalPages: 1,
-  options: { actions: [], entities: [], employees: [], properties: [], users: [], roles: [] },
+  options: { actions: [], entities: [], properties: [], users: [], employees: [], roles: [] },
 }
-const selectClass = "h-8 min-w-32 rounded-md border bg-background px-2 text-xs"
 
 export default function AuditLogsPage() {
-  const [data, setData] = useState<AuditResponse>(emptyResponse)
+  const { currentUser } = useCurrentUser()
+  const platform = currentUser.role === Role.PLATFORM_OWNER
+  const endpoint = platform ? "/api/platform-audit-logs" : "/api/audit-logs"
+  const title = platform ? "Platform Audit Logs" : currentUser.role === Role.PROPERTY_MANAGER ? "Property Audit Logs" : currentUser.role === Role.DEPARTMENT_MANAGER ? "Department Audit Logs" : isEmployeeRole(currentUser.role) ? "My Activity" : "Audit Logs"
+  const [data, setData] = useState<AuditResponse>(emptyData)
   const [filters, setFilters] = useState<Filters>(emptyFilters)
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
+  const [selected, setSelected] = useState<Audit | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
-  const [selected, setSelected] = useState<Audit | null>(null)
+
+  const queryString = useMemo(() => {
+    const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) })
+    Object.entries(filters).forEach(([key, value]) => value && params.set(key, value))
+    return params.toString()
+  }, [filters, page, pageSize])
 
   const load = useCallback(async () => {
     setLoading(true)
     setError("")
-    const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) })
-    Object.entries(filters).forEach(([key, value]) => value && params.set(key, value))
     try {
-      const response = await fetch(`/api/audit-logs?${params}`)
+      const response = await fetch(`${endpoint}?${queryString}`)
       const result = await response.json()
-      if (!response.ok) throw new Error(result.error)
+      if (!response.ok) return setError(result.error ?? "Unable to load audit logs.")
       setData(result)
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Unable to load audit logs.")
+    } catch {
+      setError("Unable to load audit logs.")
     } finally {
       setLoading(false)
     }
-  }, [filters, page, pageSize])
+  }, [endpoint, queryString])
 
   useEffect(() => {
-    // Audit logs are filtered and paginated from the client controls.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    load()
+    const timeout = window.setTimeout(() => void load(), 250)
+    return () => window.clearTimeout(timeout)
   }, [load])
 
   function updateFilter(key: keyof Filters, value: string) {
-    setPage(1)
     setFilters((current) => ({ ...current, [key]: value }))
+    setPage(1)
   }
 
   function clearFilters() {
-    setPage(1)
     setFilters(emptyFilters)
+    setPage(1)
+  }
+
+  function exportLogs(format: "csv" | "excel") {
+    window.location.href = `${endpoint}?${queryString}&format=${format}`
   }
 
   return (
     <div className="space-y-3">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Audit Logs</h1>
-        <p className="text-sm text-muted-foreground">Review scoped activity and operational changes.</p>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div><h1 className="text-2xl font-semibold">{title}</h1><p className="text-sm text-muted-foreground">{data.totalCount} scoped records</p></div>
+        <div className="flex gap-2">
+          <Button size="sm" variant="outline" onClick={() => exportLogs("csv")}><Download /> CSV</Button>
+          <Button size="sm" variant="outline" onClick={() => exportLogs("excel")}><Download /> Excel</Button>
+          <Button size="sm" variant="outline" disabled={loading} onClick={() => void load()}><RefreshCw className={loading ? "animate-spin" : ""} /> Refresh</Button>
+        </div>
       </div>
 
-      <Card>
-        <CardContent className="space-y-3 p-3">
-          <div className="flex flex-wrap items-end gap-2">
-            <CompactSelect label="Action" value={filters.action} onChange={(value) => updateFilter("action", value)} options={data.options.actions.map((value) => ({ value, label: value }))} />
-            <CompactSelect label="Entity" value={filters.entity} onChange={(value) => updateFilter("entity", value)} options={data.options.entities.map((value) => ({ value, label: value }))} />
-            <CompactSelect label="Employee" value={filters.employeeId} onChange={(value) => updateFilter("employeeId", value)} options={data.options.employees.map((item) => ({ value: item.id, label: `${item.firstName} ${item.lastName} · ${item.employeeNumber}` }))} />
-            <CompactSelect label="Property" value={filters.propertyId} onChange={(value) => updateFilter("propertyId", value)} options={data.options.properties.map((item) => ({ value: item.id, label: item.name }))} />
-            <CompactSelect label="User" value={filters.userId} onChange={(value) => updateFilter("userId", value)} options={data.options.users.map((item) => ({ value: item.id, label: `${item.firstName} ${item.lastName}` }))} />
-            <CompactSelect label="Role" value={filters.role} onChange={(value) => updateFilter("role", value)} options={data.options.roles.map((value) => ({ value, label: value }))} />
-            <label className="grid gap-1 text-[11px] font-medium text-muted-foreground">Message<Input className="h-8 w-40 text-xs" value={filters.message} onChange={(event) => updateFilter("message", event.target.value)} placeholder="Search message" /></label>
-            <label className="grid gap-1 text-[11px] font-medium text-muted-foreground">From<Input className="h-8 w-32 text-xs" type="date" value={filters.dateFrom} onChange={(event) => updateFilter("dateFrom", event.target.value)} /></label>
-            <label className="grid gap-1 text-[11px] font-medium text-muted-foreground">To<Input className="h-8 w-32 text-xs" type="date" value={filters.dateTo} onChange={(event) => updateFilter("dateTo", event.target.value)} /></label>
-            <Button size="sm" variant="outline" className="h-8" onClick={clearFilters}>Clear filters</Button>
+      <Card className="overflow-hidden">
+        <div className="sticky top-0 z-20 border-b bg-background p-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="relative min-w-48 flex-1"><Search className="absolute top-2.5 left-2.5 size-4 text-muted-foreground" /><Input className="h-9 pl-8" placeholder="Search audit logs" value={filters.search} onChange={(event) => updateFilter("search", event.target.value)} /></label>
+            <SearchableFilter key={`action:${filters.action}:${data.options.actions.length}`} label="Action" value={filters.action} options={data.options.actions.map(valueOption)} onChange={(value) => updateFilter("action", value)} />
+            <SearchableFilter key={`entity:${filters.entity}:${data.options.entities.length}`} label="Entity" value={filters.entity} options={data.options.entities.map(valueOption)} onChange={(value) => updateFilter("entity", value)} />
+            {!platform && <SearchableFilter key={`property:${filters.propertyId}:${data.options.properties.length}`} label="Property" value={filters.propertyId} options={data.options.properties.map(namedOption)} onChange={(value) => updateFilter("propertyId", value)} />}
+            {!platform && <SearchableFilter key={`employee:${filters.employeeId}:${data.options.employees.length}`} label="Employee" value={filters.employeeId} options={data.options.employees.map(personOption)} onChange={(value) => updateFilter("employeeId", value)} />}
+            <SearchableFilter key={`user:${filters.userId}:${data.options.users.length}`} label="User" value={filters.userId} options={data.options.users.map(personOption)} onChange={(value) => updateFilter("userId", value)} />
+            <SearchableFilter key={`role:${filters.role}:${data.options.roles.length}`} label="Role" value={filters.role} options={data.options.roles.map(valueOption)} onChange={(value) => updateFilter("role", value)} />
+            <Input className="h-9 w-36" placeholder="Message" value={filters.message} onChange={(event) => updateFilter("message", event.target.value)} />
+            <Input aria-label="Date from" className="h-9 w-36" type="date" value={filters.dateFrom} onChange={(event) => updateFilter("dateFrom", event.target.value)} />
+            <Input aria-label="Date to" className="h-9 w-36" type="date" value={filters.dateTo} onChange={(event) => updateFilter("dateTo", event.target.value)} />
+            <Button size="sm" variant="ghost" onClick={clearFilters}><X /> Clear filters</Button>
           </div>
+        </div>
 
-          {error && <p className="text-sm text-destructive">{error}</p>}
-
-          <Table containerClassName="max-h-[46vh] min-h-64 overflow-auto rounded-md border">
-            <thead className="sticky top-0 z-10 bg-background">
-              <tr>
-                <TableHead className="px-2 py-2 text-xs">Action</TableHead>
-                <TableHead className="px-2 py-2 text-xs">Entity</TableHead>
-                <TableHead className="px-2 py-2 text-xs">Employee</TableHead>
-                <TableHead className="px-2 py-2 text-xs">Property</TableHead>
-                <TableHead className="px-2 py-2 text-xs">User / Role</TableHead>
-                <TableHead className="px-2 py-2 text-xs">Message</TableHead>
-                <TableHead className="px-2 py-2 text-xs">Date</TableHead>
-                <TableHead className="px-2 py-2 text-xs">Details</TableHead>
-              </tr>
+        {error && <p className="border-b bg-destructive/5 p-3 text-sm text-destructive">{error}</p>}
+        <CardContent className="p-0">
+          <Table containerClassName="max-h-[52vh] overflow-auto">
+            <thead className="sticky top-0 z-10 bg-background shadow-sm">
+              <tr><TableHead className="px-3 py-2">Action</TableHead><TableHead className="px-3 py-2">Entity</TableHead>{!platform && <TableHead className="px-3 py-2">Employee</TableHead>}<TableHead className="px-3 py-2">{platform ? "Organization" : "Property"}</TableHead><TableHead className="px-3 py-2">User / Role</TableHead><TableHead className="px-3 py-2">Message</TableHead><TableHead className="px-3 py-2">Date</TableHead><TableHead className="px-3 py-2">Details</TableHead></tr>
             </thead>
             <tbody>
-              {data.records.map((log) => (
-                <tr key={log.id}>
-                  <TableCell className="max-w-44 truncate px-2 py-2 text-xs font-medium">{log.action}</TableCell>
-                  <TableCell className="max-w-40 truncate px-2 py-2 text-xs">{log.entityType}</TableCell>
-                  <TableCell className="max-w-44 truncate px-2 py-2 text-xs">{personName(log.employee)}</TableCell>
-                  <TableCell className="max-w-40 truncate px-2 py-2 text-xs">{log.property?.name ?? "—"}</TableCell>
-                  <TableCell className="max-w-48 truncate px-2 py-2 text-xs">{log.user ? `${personName(log.user)} · ${log.user.role}` : "—"}</TableCell>
-                  <TableCell className="max-w-56 truncate px-2 py-2 text-xs" title={message(log)}>{message(log)}</TableCell>
-                  <TableCell className="whitespace-nowrap px-2 py-2 text-xs">{new Date(log.createdAt).toLocaleString()}</TableCell>
-                  <TableCell className="px-2 py-1"><Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setSelected(log)}>View Details</Button></TableCell>
+              {data.records.map((record) => (
+                <tr key={record.id} className="hover:bg-muted/30">
+                  <TableCell className="max-w-44 truncate px-3 py-2 font-medium">{record.action}</TableCell>
+                  <TableCell className="max-w-40 truncate px-3 py-2">{record.entityType}</TableCell>
+                  {!platform && <TableCell className="max-w-44 truncate px-3 py-2">{personLabel(record.employee) || "-"}</TableCell>}
+                  <TableCell className="max-w-44 truncate px-3 py-2">{platform ? record.organization?.name ?? record.organizationId ?? "-" : record.property?.name ?? "-"}</TableCell>
+                  <TableCell className="max-w-48 truncate px-3 py-2">{record.user ? `${personLabel(record.user)} · ${record.user.role}` : "-"}</TableCell>
+                  <TableCell className="max-w-64 truncate px-3 py-2 text-muted-foreground" title={message(record)}>{message(record)}</TableCell>
+                  <TableCell className="whitespace-nowrap px-3 py-2 text-xs">{new Date(record.createdAt).toLocaleString()}</TableCell>
+                  <TableCell className="px-3 py-2"><Button size="sm" variant="outline" onClick={() => setSelected(record)}>View</Button></TableCell>
                 </tr>
               ))}
             </tbody>
           </Table>
-          {!loading && data.records.length === 0 && <p className="py-4 text-center text-sm text-muted-foreground">No audit logs match these filters.</p>}
-
-          <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
-            <p>{loading ? "Loading..." : `${data.totalCount} records · Page ${data.page} of ${data.totalPages}`}</p>
+          {!loading && data.records.length === 0 && <p className="p-8 text-center text-sm text-muted-foreground">No audit records match the current filters.</p>}
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t p-3 text-sm">
+            <span>{data.totalCount} total records</span>
             <div className="flex items-center gap-2">
-              <label>Rows per page <select className="ml-1 h-8 rounded-md border bg-background px-2" value={pageSize} onChange={(event) => { setPage(1); setPageSize(Number(event.target.value)) }}>{[5, 10, 25].map((size) => <option key={size}>{size}</option>)}</select></label>
-              <Button size="sm" variant="outline" className="h-8" disabled={loading || page <= 1} onClick={() => setPage((value) => value - 1)}>Previous</Button>
-              <span className="min-w-14 text-center">Page {data.page}</span>
-              <Button size="sm" variant="outline" className="h-8" disabled={loading || page >= data.totalPages} onClick={() => setPage((value) => value + 1)}>Next</Button>
+              <label>Rows <select className="h-8 rounded-md border bg-background px-2" value={pageSize} onChange={(event) => { setPageSize(Number(event.target.value)); setPage(1) }}>{[5, 10, 25, 50].map((size) => <option key={size}>{size}</option>)}</select></label>
+              <Button size="sm" variant="outline" disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>Previous</Button>
+              <span>Page {data.page} of {data.totalPages}</span>
+              <Button size="sm" variant="outline" disabled={page >= data.totalPages} onClick={() => setPage((value) => value + 1)}>Next</Button>
             </div>
           </div>
         </CardContent>
       </Card>
 
-      <Sheet open={Boolean(selected)} onOpenChange={(open) => !open && setSelected(null)}>
-        <SheetContent className="overflow-y-auto sm:max-w-xl">
-          <SheetHeader><SheetTitle>Audit details</SheetTitle><SheetDescription>Full details for the selected audit record.</SheetDescription></SheetHeader>
-          {selected && <div className="space-y-3 px-4 pb-6 text-sm"><Detail label="Action" value={selected.action} /><Detail label="Entity" value={`${selected.entityType} ${selected.entityId ?? ""}`} /><Detail label="Employee" value={personName(selected.employee)} /><Detail label="Property" value={selected.property?.name ?? "—"} /><Detail label="User / Role" value={selected.user ? `${personName(selected.user)} · ${selected.user.role}` : "—"} /><Detail label="Message" value={message(selected)} /><Detail label="Timestamp" value={new Date(selected.createdAt).toLocaleString()} /><pre className="overflow-auto rounded-md border bg-muted/30 p-3 text-xs">{JSON.stringify(selected.metadata ?? {}, null, 2)}</pre></div>}
-        </SheetContent>
-      </Sheet>
+      <DetailsDrawer record={selected} onClose={() => setSelected(null)} />
     </div>
   )
 }
 
-function CompactSelect({ label, value, options, onChange }: { label: string; value: string; options: Array<{ value: string; label: string }>; onChange: (value: string) => void }) {
-  return <label className="grid gap-1 text-[11px] font-medium text-muted-foreground">{label}<select className={selectClass} value={value} onChange={(event) => onChange(event.target.value)}><option value="">All</option>{options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+function SearchableFilter({ label, value, options, onChange }: { label: string; value: string; options: Array<{ value: string; label: string }>; onChange: (value: string) => void }) {
+  const listId = useId()
+  const selectedLabel = options.find((option) => option.value === value)?.label ?? ""
+  const [text, setText] = useState(selectedLabel)
+
+  function selectText(nextText: string) {
+    setText(nextText)
+    if (!nextText) return onChange("")
+    const match = options.find((option) => option.label.toLocaleLowerCase() === nextText.toLocaleLowerCase())
+    if (match) onChange(match.value)
+  }
+
+  return (
+    <>
+      <input
+        aria-label={label}
+        className="h-9 max-w-44 rounded-md border bg-background px-2 text-sm"
+        list={listId}
+        placeholder={`${label}: All`}
+        value={text}
+        onBlur={() => setText(options.find((option) => option.value === value)?.label ?? "")}
+        onChange={(event) => selectText(event.target.value)}
+      />
+      <datalist id={listId}>{options.map((option) => <option key={option.value} value={option.label} />)}</datalist>
+    </>
+  )
 }
-function Detail({ label, value }: { label: string; value: string }) {
-  return <p><span className="font-medium">{label}:</span> {value}</p>
+function DetailsDrawer({ record, onClose }: { record: Audit | null; onClose: () => void }) {
+  return <Sheet open={Boolean(record)} onOpenChange={(open) => !open && onClose()}><SheetContent className="overflow-y-auto sm:max-w-xl"><SheetHeader><SheetTitle>Audit details</SheetTitle><SheetDescription>Full immutable event context.</SheetDescription></SheetHeader>{record && <div className="space-y-3 px-4 pb-6 text-sm"><Detail label="Audit ID" value={record.id} /><Detail label="Action" value={record.action} /><Detail label="Entity" value={`${record.entityType} ${record.entityId ?? ""}`} /><Detail label="Actor" value={record.user ? `${personLabel(record.user)} · ${record.user.role}` : "System"} /><Detail label="Property" value={record.property?.name ?? record.propertyId ?? "-"} /><Detail label="Department" value={record.departmentId ?? "-"} /><Detail label="Employee" value={personLabel(record.employee) || record.employeeId || "-"} /><Detail label="Timestamp" value={new Date(record.createdAt).toLocaleString()} /><JsonDetail label="Before Value" value={record.metadata?.oldValue ?? record.metadata?.previous} /><JsonDetail label="After Value" value={record.metadata?.newValue ?? record.metadata?.current} /><JsonDetail label="Metadata JSON" value={record.metadata} /></div>}</SheetContent></Sheet>
 }
-function personName(person: Person | null) {
-  return person ? `${person.firstName} ${person.lastName}` : "—"
-}
-function message(log: Audit) {
-  const value = log.metadata?.message ?? log.metadata?.note
-  return typeof value === "string" ? value : "—"
+function Detail({ label, value }: { label: string; value: string }) { return <p><span className="font-medium">{label}:</span> {value}</p> }
+function JsonDetail({ label, value }: { label: string; value: unknown }) { return <div><p className="mb-1 font-medium">{label}</p><pre className="max-h-56 overflow-auto rounded-md border bg-muted/20 p-2 text-xs">{JSON.stringify(value ?? {}, null, 2)}</pre></div> }
+function personLabel(option: Option | null) { return option ? [option.firstName, option.lastName].filter(Boolean).join(" ") : "" }
+function namedOption(option: Option) { return { value: option.id, label: option.name ?? option.id } }
+function personOption(option: Option) { return { value: option.id, label: `${personLabel(option)}${option.employeeNumber ? ` · ${option.employeeNumber}` : option.role ? ` · ${option.role}` : ""}` } }
+function valueOption(value: string) { return { value, label: value.replaceAll("_", " ") } }
+function message(record: Audit) { return String(record.metadata?.message ?? record.metadata?.note ?? record.metadata?.reason ?? "-") }
+function isEmployeeRole(role: Role) {
+  const employeeRoles: Role[] = [Role.EMPLOYEE, Role.FRONT_DESK, Role.HOUSEKEEPING, Role.MAINTENANCE, Role.NIGHT_AUDITOR]
+  return employeeRoles.includes(role)
 }

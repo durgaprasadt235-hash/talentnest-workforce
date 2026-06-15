@@ -2,6 +2,7 @@ import { createHash, randomBytes } from "node:crypto"
 
 import {
   AttendanceAlertType,
+  AuditType,
   AttendanceCorrectionStatus,
   AttendanceDeviceStatus,
   AttendanceDeviceType,
@@ -69,10 +70,15 @@ async function audit(
   await prisma.auditLog.create({
     data: {
       action,
+      auditType: AuditType.ORGANIZATION,
       entityType,
       entityId,
       organizationId,
       propertyId,
+      employeeId:
+        typeof metadata?.employeeId === "string" ? metadata.employeeId : undefined,
+      departmentId:
+        typeof metadata?.departmentId === "string" ? metadata.departmentId : undefined,
       metadata: metadata as Prisma.InputJsonValue | undefined,
     },
   })
@@ -789,11 +795,17 @@ export async function clockIn(input: ClockRequest) {
       record.id,
       record.organizationId,
       record.propertyId,
-      { managerApprovalStatus: ManagerApprovalStatus.PENDING },
+      {
+        employeeId: record.employeeId,
+        departmentId: record.departmentId,
+        managerApprovalStatus: ManagerApprovalStatus.PENDING,
+      },
     )
   }
 
   await audit("CLOCK_IN_ATTEMPT", "AttendanceRecord", record.id, record.organizationId, record.propertyId, {
+    employeeId: record.employeeId,
+    departmentId: record.departmentId,
     exceptionType: exceptionType ?? AttendanceExceptionType.NONE,
     pendingManagerApproval: pending,
   })
@@ -852,7 +864,10 @@ export async function clockOut(input: ClockRequest) {
     },
   })
 
-  await audit("CLOCK_OUT", "AttendanceRecord", record.id, record.organizationId, record.propertyId)
+  await audit("CLOCK_OUT", "AttendanceRecord", record.id, record.organizationId, record.propertyId, {
+    employeeId: record.employeeId,
+    departmentId: record.departmentId,
+  })
 
   return { record: updated, message: "Clock-out successful." }
 }
@@ -1163,6 +1178,7 @@ export async function resolveAttendanceCorrection(input: CorrectionActionRequest
     resolved.organizationId,
     resolved.propertyId,
     {
+      employeeId: resolved.employeeId,
       note: input.note,
       attendanceRecordId: resolved.attendanceRecordId,
     },

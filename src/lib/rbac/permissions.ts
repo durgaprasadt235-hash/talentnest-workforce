@@ -101,6 +101,7 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     Permission.MANAGE_DEVICES,
     Permission.VIEW_USERS,
     Permission.MANAGE_USERS,
+    Permission.VIEW_AUDIT_LOGS,
     Permission.VIEW_INVOICES,
     Permission.VIEW_WEEKLY_ATTENDANCE,
     Permission.MANAGE_CORPORATE_WEEKLY_ATTENDANCE,
@@ -144,6 +145,7 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     Permission.MANAGE_INVOICES,
     Permission.VIEW_AUDIT_LOGS,
   ],
+  [Role.DEPARTMENT_MANAGER]: [Permission.VIEW_AUDIT_LOGS],
   [Role.STAFFING_ADMIN]: [
     Permission.VIEW_EMPLOYEES,
     Permission.VIEW_TIMESHEETS,
@@ -168,9 +170,10 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
   [Role.EMPLOYEE]: [
     Permission.VIEW_SCHEDULES,
     Permission.VIEW_ATTENDANCE,
+    Permission.VIEW_AUDIT_LOGS,
   ],
-  [Role.FRONT_DESK]: [Permission.VIEW_SCHEDULES, Permission.VIEW_ATTENDANCE],
-  [Role.HOUSEKEEPING]: [Permission.VIEW_SCHEDULES, Permission.VIEW_ATTENDANCE],
-  [Role.MAINTENANCE]: [Permission.VIEW_SCHEDULES, Permission.VIEW_ATTENDANCE],
-  [Role.NIGHT_AUDITOR]: [Permission.VIEW_SCHEDULES, Permission.VIEW_ATTENDANCE],
+  [Role.FRONT_DESK]: [Permission.VIEW_SCHEDULES, Permission.VIEW_ATTENDANCE, Permission.VIEW_AUDIT_LOGS],
+  [Role.HOUSEKEEPING]: [Permission.VIEW_SCHEDULES, Permission.VIEW_ATTENDANCE, Permission.VIEW_AUDIT_LOGS],
+  [Role.MAINTENANCE]: [Permission.VIEW_SCHEDULES, Permission.VIEW_ATTENDANCE, Permission.VIEW_AUDIT_LOGS],
+  [Role.NIGHT_AUDITOR]: [Permission.VIEW_SCHEDULES, Permission.VIEW_ATTENDANCE, Permission.VIEW_AUDIT_LOGS],
 }
