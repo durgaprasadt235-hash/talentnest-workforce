@@ -16,6 +16,7 @@ export async function GET(request: Request) {
     return Response.json(await listWeeklyAttendanceByRole(user, {
       organizationId: url.searchParams.get("organizationId") || undefined,
       propertyId: url.searchParams.get("propertyId") || undefined,
+      weekStart: url.searchParams.get("weekStart") || undefined,
       status,
     }))
   } catch (error) {

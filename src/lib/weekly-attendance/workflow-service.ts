@@ -24,14 +24,21 @@ export function assertWeeklyAttendanceGenerationScope(
   user: CurrentUser,
   input: { organizationId: string; propertyId: string },
 ) {
-  if (user.role !== Role.PROPERTY_MANAGER) throw new AuthorizationError("Only property managers can generate a property batch.")
-  if (user.organizationId && user.organizationId !== input.organizationId) throw new Error("Unauthorized.")
-  assertPropertyScope(user, input.propertyId)
+  if (user.role === Role.PROPERTY_MANAGER) {
+    if (user.organizationId !== input.organizationId) throw new AuthorizationError("Unauthorized.")
+    return assertPropertyScope(user, input.propertyId)
+  }
+  if (user.role === Role.ORGANIZATION_OWNER) {
+    if (user.organizationId !== input.organizationId) throw new AuthorizationError("Unauthorized.")
+    return
+  }
+  throw new AuthorizationError("Only organization owners and property managers can generate weekly attendance.")
 }
 
 export async function assertPropertyManagerBatchScope(id: string, user: CurrentUser) {
   if (user.role !== Role.PROPERTY_MANAGER) throw new AuthorizationError("Only property managers can modify attendance batches.")
   const batch = await getBatch(id)
+  assertOrganizationScope(user, batch.organizationId)
   assertPropertyScope(user, batch.propertyId)
 
   if (
@@ -73,17 +80,40 @@ export async function sendWeeklyAttendanceToCorporate(id: string, user: CurrentU
   return updated
 }
 
+export async function sendWeeklyAttendanceToManager(id: string, user: CurrentUser) {
+  const batch = await getBatch(id)
+  assertOrganizationOrPropertyScope(user, batch)
+
+  if (
+    batch.status !== WeeklyAttendanceBatchStatus.DRAFT &&
+    batch.status !== WeeklyAttendanceBatchStatus.CORRECTIONS_REQUIRED
+  ) {
+    throw new Error("Only draft or corrected batches can be sent to the property manager.")
+  }
+
+  const updated = await prisma.weeklyAttendanceBatch.update({
+    where: { id },
+    data: { status: WeeklyAttendanceBatchStatus.PENDING_MANAGER_REVIEW },
+  })
+  await audit("SEND_WEEKLY_ATTENDANCE_TO_MANAGER", updated)
+  return updated
+}
+
 export async function sendWeeklyAttendanceToFinance(id: string, user: CurrentUser) {
   const batch = await getBatch(id)
 
-  if (user.role !== Role.CORPORATE_ADMIN) {
-    throw new AuthorizationError("Only corporate admins can send batches to finance.")
+  if (user.role !== Role.CORPORATE_ADMIN && user.role !== Role.ORGANIZATION_OWNER) {
+    throw new AuthorizationError("Only organization owners and corporate admins can send batches to finance.")
   }
 
-  if (user.organizationId && user.organizationId !== batch.organizationId) throw new Error("Unauthorized.")
+  if (user.organizationId !== batch.organizationId) throw new AuthorizationError("Unauthorized.")
 
-  if (batch.status !== WeeklyAttendanceBatchStatus.LOCKED) {
-    throw new Error("Only locked batches can be sent to finance.")
+  if (
+    batch.status !== WeeklyAttendanceBatchStatus.APPROVED &&
+    batch.status !== WeeklyAttendanceBatchStatus.LOCKED &&
+    batch.status !== WeeklyAttendanceBatchStatus.SENT_TO_CORPORATE
+  ) {
+    throw new Error("Only approved, locked, or corporate-reviewed batches can be sent to finance.")
   }
 
   const updated = await prisma.weeklyAttendanceBatch.update({
@@ -138,9 +168,17 @@ export async function returnWeeklyAttendanceToManager(id: string, user: CurrentU
     where: { id },
     data: {
       status: WeeklyAttendanceBatchStatus.PENDING_MANAGER_REVIEW,
+      approvedAt: null,
+      approvedByUserId: null,
       sentToCorporateAt: null,
       sentToFinanceAt: null,
       financeReviewedAt: null,
+      lines: {
+        updateMany: {
+          where: {},
+          data: { approvalStatus: WeeklyAttendanceLineApprovalStatus.PENDING },
+        },
+      },
     },
   })
 
@@ -158,6 +196,7 @@ export async function createWeeklyAttendanceInvoice(
   }
 
   const batch = await getBatch(id)
+  assertOrganizationScope(user, batch.organizationId)
 
   if (batch.status !== WeeklyAttendanceBatchStatus.SENT_TO_FINANCE) {
     throw new Error("Only batches sent to finance can be invoiced.")
@@ -277,6 +316,7 @@ export async function markWeeklyAttendanceInvoiceSent(id: string, user: CurrentU
   if (user.role !== Role.FINANCE_USER) throw new AuthorizationError("Only finance can mark invoices sent.")
 
   const invoice = await getInvoice(id)
+  assertOrganizationScope(user, invoice.organizationId)
 
   if (invoice.status !== WeeklyAttendanceInvoiceStatus.DRAFT) {
     throw new Error("Only draft invoices can be marked sent.")
@@ -301,6 +341,7 @@ export async function markInvoiceReviewComplete(id: string, user: CurrentUser) {
   if (user.role !== Role.FINANCE_USER) throw new AuthorizationError("Only finance can complete invoice review.")
 
   const batch = await getBatch(id)
+  assertOrganizationScope(user, batch.organizationId)
 
   if (
     batch.status !== WeeklyAttendanceBatchStatus.SENT_TO_FINANCE &&
@@ -327,6 +368,7 @@ export async function markWeeklyAttendanceInvoicePaid(id: string, user: CurrentU
   })
 
   if (!invoice) throw new Error("Weekly attendance invoice not found.")
+  assertOrganizationScope(user, invoice.organizationId)
   if (invoice.status === WeeklyAttendanceInvoiceStatus.PAID) throw new Error("Invoice is already paid.")
   if (invoice.status !== WeeklyAttendanceInvoiceStatus.SENT) throw new Error("Only sent invoices can be marked paid.")
 
@@ -394,6 +436,30 @@ function assertCorporate(user: CurrentUser, organizationId: string) {
   }
 
   if (user.organizationId && user.organizationId !== organizationId) throw new Error("Unauthorized.")
+}
+
+function assertOrganizationScope(user: CurrentUser, organizationId: string) {
+  if (
+    user.role !== Role.PLATFORM_OWNER &&
+    user.role !== Role.PLATFORM_ADMIN &&
+    user.organizationId !== organizationId
+  ) {
+    throw new AuthorizationError("Unauthorized.")
+  }
+}
+
+function assertOrganizationOrPropertyScope(
+  user: CurrentUser,
+  batch: { organizationId: string; propertyId: string },
+) {
+  if (user.role === Role.PROPERTY_MANAGER) return assertPropertyScope(user, batch.propertyId)
+  if (
+    (user.role === Role.ORGANIZATION_OWNER || user.role === Role.CORPORATE_ADMIN) &&
+    user.organizationId === batch.organizationId
+  ) {
+    return
+  }
+  throw new AuthorizationError("You cannot manage this weekly attendance batch.")
 }
 
 function assertPropertyScope(user: CurrentUser, propertyId: string) {

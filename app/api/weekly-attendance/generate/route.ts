@@ -10,7 +10,12 @@ export async function POST(request: Request) {
     const user = await requireServerPermission(request, Permission.GENERATE_WEEKLY_ATTENDANCE)
     const input = await parseJsonBody(request, generateWeeklyAttendanceSchema)
     assertWeeklyAttendanceGenerationScope(user, input)
-    return Response.json({ batch: await generateWeeklyAttendance(input) })
+    const batch = await generateWeeklyAttendance(input)
+    return Response.json({
+      batch,
+      lineCount: batch.lines.length,
+      totalHours: batch.lines.reduce((total, line) => total + Number(line.totalHours), 0),
+    })
   } catch (error) {
     return errorResponse(error)
   }

@@ -76,6 +76,8 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     Permission.MANAGE_LEGAL_ENTITIES,
     Permission.MANAGE_DEVICES,
     Permission.MANAGE_CORPORATE_WEEKLY_ATTENDANCE,
+    Permission.GENERATE_WEEKLY_ATTENDANCE,
+    Permission.SEND_WEEKLY_ATTENDANCE_TO_FINANCE,
   ],
   [Role.REGIONAL_MANAGER]: [
     Permission.VIEW_PROPERTIES, Permission.MANAGE_PROPERTIES, Permission.VIEW_DEPARTMENTS,

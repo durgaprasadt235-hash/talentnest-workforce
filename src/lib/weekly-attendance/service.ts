@@ -159,7 +159,14 @@ export async function generateWeeklyAttendance(
     },
     include: batchInclude,
   })
-  if (existing) return existing
+  if (
+    existing &&
+    existing.status !== WeeklyAttendanceBatchStatus.DRAFT &&
+    existing.status !== WeeklyAttendanceBatchStatus.PENDING_MANAGER_REVIEW &&
+    existing.status !== WeeklyAttendanceBatchStatus.CORRECTIONS_REQUIRED
+  ) {
+    return existing
+  }
 
   const property = await prisma.property.findFirst({
     where: { id: input.propertyId, organizationId: input.organizationId },
@@ -174,10 +181,8 @@ export async function generateWeeklyAttendance(
       organizationId: input.organizationId,
       propertyId: input.propertyId,
       status: { not: AttendanceRecordStatus.REJECTED },
-      OR: [
-        { clockInAt: { gte: weekStartDate, lt: nextWeekStart } },
-        { clockOutAt: { gte: weekStartDate, lt: nextWeekStart } },
-      ],
+      clockInAt: { gte: weekStartDate, lt: nextWeekStart },
+      clockOutAt: { not: null },
     },
     include: {
       employee: {
@@ -204,8 +209,6 @@ export async function generateWeeklyAttendance(
       correctionPendingCount: 0,
     }
 
-    calculation.missingPunchCount += Number(!record.clockInAt)
-    calculation.missingPunchCount += Number(!record.clockOutAt)
     if (record.clockInAt && record.clockOutAt && record.clockOutAt > record.clockInAt) {
       calculation.totalHours +=
         (record.clockOutAt.getTime() - record.clockInAt.getTime()) / HOUR_MS
@@ -254,6 +257,29 @@ export async function generateWeeklyAttendance(
     }
   })
 
+  if (!lines.length) {
+    throw new Error("No closed attendance records were found for this property and week.")
+  }
+
+  if (existing) {
+    const refreshed = await prisma.$transaction(async (tx) => {
+      await tx.weeklyAttendanceLine.deleteMany({ where: { batchId: existing.id } })
+      return tx.weeklyAttendanceBatch.update({
+        where: { id: existing.id },
+        data: {
+          generatedAt: new Date(),
+          status: WeeklyAttendanceBatchStatus.DRAFT,
+          approvedAt: null,
+          approvedByUserId: null,
+          lines: { create: lines },
+        },
+        include: batchInclude,
+      })
+    })
+    await audit("REFRESH_WEEKLY_ATTENDANCE", refreshed)
+    return refreshed
+  }
+
   try {
     const batch = await prisma.weeklyAttendanceBatch.create({
       data: {
@@ -261,7 +287,7 @@ export async function generateWeeklyAttendance(
         propertyId: input.propertyId,
         weekStartDate,
         weekEndDate,
-        status: WeeklyAttendanceBatchStatus.PENDING_MANAGER_REVIEW,
+        status: WeeklyAttendanceBatchStatus.DRAFT,
         lines: { create: lines },
       },
       include: batchInclude,

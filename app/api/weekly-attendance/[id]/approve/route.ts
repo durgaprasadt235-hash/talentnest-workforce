@@ -14,7 +14,12 @@ export async function POST(
     const { id } = await context.params
     await assertPropertyManagerBatchScope(id, user)
     const input = await parseJsonBody(request, approveWeeklyAttendanceSchema)
-    return Response.json({ batch: await approveWeeklyAttendance(id, input) })
+    return Response.json({
+      batch: await approveWeeklyAttendance(id, {
+        ...input,
+        approvedByUserId: user.id,
+      }),
+    })
   } catch (error) {
     return errorResponse(error)
   }
