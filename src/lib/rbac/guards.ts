@@ -16,6 +16,7 @@ export function hasPermission(
   user: CurrentUser,
   permission: Permission,
 ): boolean {
+  if (user.permissions) return user.permissions.includes(permission)
   return roleHasPermission(user.role, permission)
 }
 

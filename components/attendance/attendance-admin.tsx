@@ -102,6 +102,8 @@ export function AttendanceAdmin() {
   }, [currentUser.role])
 
   useEffect(() => {
+    // Initial remote synchronization is intentionally client-side for this module.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     load().catch((caught: Error) => setError(caught.message))
   }, [load])
 
@@ -136,7 +138,7 @@ export function AttendanceAdmin() {
   async function resolveCorrection(correctionId: string, status: "APPROVED" | "REJECTED") {
     setError("")
 
-    const payload: any = { correctionId, status }
+    const payload: { correctionId: string; status: "APPROVED" | "REJECTED"; note?: string } = { correctionId, status }
     // note is optional for approve, required for reject (enforced by server validation)
     if (status === "REJECTED") {
       // use rejection state if present, otherwise fall back to global note

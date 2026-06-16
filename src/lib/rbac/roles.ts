@@ -1,7 +1,11 @@
 export const Role = {
   PLATFORM_OWNER: "PLATFORM_OWNER",
   PLATFORM_ADMIN: "PLATFORM_ADMIN",
+  PLATFORM_OPERATIONS: "PLATFORM_OPERATIONS",
   ORGANIZATION_OWNER: "ORGANIZATION_OWNER",
+  HR_OPERATIONS_ADMIN: "HR_OPERATIONS_ADMIN",
+  FINANCE_ADMIN: "FINANCE_ADMIN",
+  AUDIT_ADMIN: "AUDIT_ADMIN",
   REGIONAL_MANAGER: "REGIONAL_MANAGER",
   CORPORATE_ADMIN: "CORPORATE_ADMIN",
   FINANCE_USER: "FINANCE_USER",
@@ -28,7 +32,11 @@ export const ROLES = Object.values(Role)
 export const ROLE_LABELS: Record<Role, string> = {
   [Role.PLATFORM_OWNER]: "Platform Owner",
   [Role.PLATFORM_ADMIN]: "Platform Admin",
+  [Role.PLATFORM_OPERATIONS]: "Platform Operations",
   [Role.ORGANIZATION_OWNER]: "Organization Owner",
+  [Role.HR_OPERATIONS_ADMIN]: "HR & Operations Admin",
+  [Role.FINANCE_ADMIN]: "Finance Admin",
+  [Role.AUDIT_ADMIN]: "Audit Admin",
   [Role.REGIONAL_MANAGER]: "Regional Manager",
   [Role.CORPORATE_ADMIN]: "Corporate Admin",
   [Role.FINANCE_USER]: "Finance User",

@@ -1,5 +1,6 @@
 import { Role } from "@/src/lib/rbac/roles"
 import type { OrganizationFeatureAccess } from "@/src/lib/features/feature-keys"
+import type { Permission } from "@/src/lib/rbac/permissions"
 
 export type CurrentUser = {
   id?: string
@@ -14,6 +15,7 @@ export type CurrentUser = {
   companyName?: string
   mustChangePassword?: boolean
   featureAccess?: OrganizationFeatureAccess
+  permissions?: Permission[]
 }
 
 export const DEFAULT_CURRENT_USER: CurrentUser = {

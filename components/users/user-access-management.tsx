@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react"
-import { Pencil, Plus, RotateCcw, UserMinus } from "lucide-react"
+import { KeyRound, MailPlus, Pencil, Plus, RotateCcw, UserMinus, XCircle } from "lucide-react"
 
 import { useCurrentUser } from "@/components/rbac/current-user-provider"
 import { Badge } from "@/components/ui/badge"
@@ -53,6 +53,30 @@ type UserData = {
     departments: (NamedOption & { organizationId: string; propertyId: string })[]
     roles: RoleType[]
   }
+}
+type InvitationRow = {
+  id: string
+  email: string
+  firstName: string
+  lastName: string
+  role: RoleType
+  status: string
+  invitedAt: string
+  sentAt: string | null
+  expiresAt: string
+  lastError: string | null
+  organization: NamedOption | null
+}
+type RolePermissionRow = {
+  id: string
+  role: RoleType
+  module: string
+  canView: boolean
+  canCreate: boolean
+  canEdit: boolean
+  canDelete: boolean
+  canApprove: boolean
+  canExport: boolean
 }
 type UserForm = {
   firstName: string
@@ -110,6 +134,9 @@ export function UserAccessManagement({
   const handledAssignment = useRef(false)
   const canCreate = hasPermission(currentUser, Permission.MANAGE_USERS)
   const [data, setData] = useState<UserData>(emptyData)
+  const [invitations, setInvitations] = useState<InvitationRow[]>([])
+  const [rolePermissions, setRolePermissions] = useState<RolePermissionRow[]>([])
+  const [activeTab, setActiveTab] = useState<"users" | "invitations" | "roles" | "permissions">("users")
   const [form, setForm] = useState<UserForm>(emptyForm)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [open, setOpen] = useState(false)
@@ -133,11 +160,32 @@ export function UserAccessManagement({
     setData(result)
   }, [requestHeaders])
 
+  const loadInvitations = useCallback(async () => {
+    const response = await fetch("/api/user-invitations", { headers: requestHeaders })
+    const result = await response.json()
+    if (!response.ok) throw new Error(result.error)
+    setInvitations(result.invitations)
+  }, [requestHeaders])
+
+  const loadRolePermissions = useCallback(async () => {
+    const response = await fetch("/api/role-permissions", { headers: requestHeaders })
+    const result = await response.json()
+    if (!response.ok) throw new Error(result.error)
+    setRolePermissions(result.permissions)
+  }, [requestHeaders])
+
   useEffect(() => {
     // Initial remote synchronization is intentionally client-side for this module.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     load().catch((caught: Error) => setError(caught.message))
   }, [load])
+
+  useEffect(() => {
+    // Tab-specific remote synchronization is intentionally client-side for this module.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (activeTab === "invitations") loadInvitations().catch((caught: Error) => setError(caught.message))
+    if (activeTab === "permissions") loadRolePermissions().catch((caught: Error) => setError(caught.message))
+  }, [activeTab, loadInvitations, loadRolePermissions])
 
   useEffect(() => {
     const organizationId = initialOrganizationId
@@ -180,6 +228,31 @@ export function UserAccessManagement({
     setForm({ ...emptyForm, role: data.options.roles[0] ?? Role.EMPLOYEE })
     setError("")
     setOpen(true)
+  }
+
+  async function inviteFromForm() {
+    setBusy(true)
+    setError("")
+    setMessage("")
+    const response = await fetch("/api/user-invitations", {
+      method: "POST",
+      headers: { "content-type": "application/json", ...requestHeaders },
+      body: JSON.stringify({
+        firstName: form.firstName,
+        lastName: form.lastName,
+        email: form.email,
+        role: form.role,
+        organizationId: form.organizationId || null,
+        departmentId: form.departmentId || null,
+        staffingCompanyId: form.staffingCompanyId || null,
+      }),
+    })
+    const result = await response.json()
+    setBusy(false)
+    if (!response.ok) return setError(result.error)
+    setOpen(false)
+    setMessage(result.delivery?.message ?? "Invitation created.")
+    await loadInvitations()
   }
 
   function startEdit(user: UserRow) {
@@ -254,6 +327,64 @@ export function UserAccessManagement({
     await load()
   }
 
+  async function resetPassword(user: UserRow) {
+    const temporaryPassword = window.prompt(`Temporary password for ${user.email}`)
+    if (!temporaryPassword) return
+    setError("")
+    setMessage("")
+    const response = await fetch(`/api/users/${user.id}/reset-password`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json", ...requestHeaders },
+      body: JSON.stringify({ temporaryPassword }),
+    })
+    const result = await response.json()
+    if (!response.ok) return setError(result.error)
+    setMessage("Password reset. User must change password at next login.")
+    await load()
+  }
+
+  async function resetPin(user: UserRow) {
+    const pin = window.prompt(`New 4-digit PIN for ${user.email}`)
+    if (!pin) return
+    setError("")
+    setMessage("")
+    const response = await fetch(`/api/users/${user.id}/reset-pin`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json", ...requestHeaders },
+      body: JSON.stringify({ pin }),
+    })
+    const result = await response.json()
+    if (!response.ok) return setError(result.error)
+    setMessage("PIN reset.")
+  }
+
+  async function invitationAction(invitation: InvitationRow, action: "resend" | "revoke" | "expire") {
+    setError("")
+    setMessage("")
+    const response = await fetch(`/api/user-invitations/${invitation.id}/${action}`, {
+      method: "PATCH",
+      headers: requestHeaders,
+    })
+    const result = await response.json()
+    if (!response.ok) return setError(result.error)
+    setMessage(result.delivery?.message ?? `Invitation ${action} complete.`)
+    await loadInvitations()
+  }
+
+  async function updateRolePermission(row: RolePermissionRow, key: keyof Pick<RolePermissionRow, "canView" | "canCreate" | "canEdit" | "canDelete" | "canApprove" | "canExport">) {
+    setError("")
+    setMessage("")
+    const response = await fetch("/api/role-permissions", {
+      method: "PATCH",
+      headers: { "content-type": "application/json", ...requestHeaders },
+      body: JSON.stringify({ ...row, [key]: !row[key] }),
+    })
+    const result = await response.json()
+    if (!response.ok) return setError(result.error)
+    setMessage("Permission updated.")
+    await loadRolePermissions()
+  }
+
   return (
     <div className="space-y-6 p-4 sm:p-6 lg:p-10">
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -271,13 +402,31 @@ export function UserAccessManagement({
         )}
       </div>
 
+      <div className="flex flex-wrap gap-2 border-b pb-2">
+        {[
+          ["users", "Users"],
+          ["invitations", "Invitations"],
+          ["roles", "Roles"],
+          ["permissions", "Permissions"],
+        ].map(([tab, label]) => (
+          <Button
+            key={tab}
+            type="button"
+            variant={activeTab === tab ? "default" : "outline"}
+            onClick={() => setActiveTab(tab as typeof activeTab)}
+          >
+            {label}
+          </Button>
+        ))}
+      </div>
+
       {(message || error) && (
         <p className={error ? "text-sm text-destructive" : "text-sm text-emerald-700"}>
           {error || message}
         </p>
       )}
 
-      {isPlatformViewer ? (
+      {activeTab === "users" && (isPlatformViewer ? (
         <>
           <UserDirectory
             title="TalentNest Platform Team"
@@ -285,6 +434,8 @@ export function UserAccessManagement({
             users={platformUsers}
             startEdit={startEdit}
             changeStatus={changeStatus}
+            resetPassword={resetPassword}
+            resetPin={resetPin}
           />
           <UserDirectory
             title="Client Organization Users"
@@ -292,6 +443,8 @@ export function UserAccessManagement({
             users={clientManagementUsers}
             startEdit={startEdit}
             changeStatus={changeStatus}
+            resetPassword={resetPassword}
+            resetPin={resetPin}
           />
           <UserDirectory
             title="Property Employees"
@@ -299,6 +452,8 @@ export function UserAccessManagement({
             users={propertyEmployees}
             startEdit={startEdit}
             changeStatus={changeStatus}
+            resetPassword={resetPassword}
+            resetPin={resetPin}
           />
           <UserDirectory
             title="Staffing Company Users"
@@ -306,6 +461,8 @@ export function UserAccessManagement({
             users={staffingUsers}
             startEdit={startEdit}
             changeStatus={changeStatus}
+            resetPassword={resetPassword}
+            resetPin={resetPin}
           />
         </>
       ) : (
@@ -315,7 +472,26 @@ export function UserAccessManagement({
           users={data.users}
           startEdit={startEdit}
           changeStatus={changeStatus}
+          resetPassword={resetPassword}
+          resetPin={resetPin}
         />
+      ))}
+
+      {activeTab === "invitations" && (
+        <InvitationDirectory
+          invitations={invitations}
+          onCreate={startCreate}
+          onAction={invitationAction}
+          canCreate={canCreate}
+        />
+      )}
+
+      {activeTab === "roles" && (
+        <RoleDirectory roles={data.options.roles} />
+      )}
+
+      {activeTab === "permissions" && (
+        <PermissionMatrix permissions={rolePermissions} onToggle={updateRolePermission} />
       )}
 
       <Sheet open={open} onOpenChange={setOpen}>
@@ -382,7 +558,11 @@ export function UserAccessManagement({
             </Field>
             {error && <p className="text-sm text-destructive">{error}</p>}
             <SheetFooter className="px-0">
-              <Button disabled={busy} type="submit">{busy ? "Saving..." : "Save user"}</Button>
+              {activeTab === "invitations" && !editingId ? (
+                <Button disabled={busy} type="button" onClick={() => void inviteFromForm()}>{busy ? "Sending..." : "Send invitation"}</Button>
+              ) : (
+                <Button disabled={busy} type="submit">{busy ? "Saving..." : "Save user"}</Button>
+              )}
             </SheetFooter>
           </form>
         </SheetContent>
@@ -397,12 +577,16 @@ function UserDirectory({
   users,
   startEdit,
   changeStatus,
+  resetPassword,
+  resetPin,
 }: {
   title: string
   description: string
   users: UserRow[]
   startEdit: (user: UserRow) => void
   changeStatus: (user: UserRow) => Promise<void>
+  resetPassword: (user: UserRow) => Promise<void>
+  resetPin: (user: UserRow) => Promise<void>
 }) {
   return <Card>
     <CardHeader>
@@ -452,6 +636,14 @@ function UserDirectory({
                       {user.status === "ACTIVE" ? <UserMinus className="size-4" /> : <RotateCcw className="size-4" />}
                       <span className="sr-only">{user.status === "ACTIVE" ? "Deactivate" : "Reactivate"} {user.firstName}</span>
                     </Button>
+                    <Button variant="ghost" size="icon-sm" onClick={() => void resetPassword(user)}>
+                      <KeyRound className="size-4" />
+                      <span className="sr-only">Reset password for {user.firstName}</span>
+                    </Button>
+                    <Button variant="ghost" size="icon-sm" onClick={() => void resetPin(user)}>
+                      <span className="text-xs font-semibold">PIN</span>
+                      <span className="sr-only">Reset PIN for {user.firstName}</span>
+                    </Button>
                   </div>
                 ) : "—"}
               </TableCell>
@@ -464,6 +656,162 @@ function UserDirectory({
       </Table>
     </CardContent>
   </Card>
+}
+
+function InvitationDirectory({
+  invitations,
+  onCreate,
+  onAction,
+  canCreate,
+}: {
+  invitations: InvitationRow[]
+  onCreate: () => void
+  onAction: (invitation: InvitationRow, action: "resend" | "revoke" | "expire") => Promise<void>
+  canCreate: boolean
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="font-semibold">Invitations</p>
+            <p className="text-sm text-muted-foreground">Invite, resend, revoke, and expire user invitations.</p>
+          </div>
+          {canCreate && <Button onClick={onCreate}><MailPlus className="size-4" /> Invite user</Button>}
+        </div>
+      </CardHeader>
+      <CardContent className="p-0">
+        <Table className="min-w-[1050px]">
+          <thead>
+            <tr>
+              <TableHead>Name</TableHead>
+              <TableHead>Email</TableHead>
+              <TableHead>Role</TableHead>
+              <TableHead>Organization</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Sent</TableHead>
+              <TableHead>Expires</TableHead>
+              <TableHead>Last error</TableHead>
+              <TableHead>Actions</TableHead>
+            </tr>
+          </thead>
+          <tbody>
+            {invitations.map((invitation) => (
+              <tr key={invitation.id}>
+                <TableCell className="font-medium">{invitation.firstName} {invitation.lastName}</TableCell>
+                <TableCell>{invitation.email}</TableCell>
+                <TableCell><Badge>{ROLE_LABELS[invitation.role]}</Badge></TableCell>
+                <TableCell>{invitation.organization?.name ?? "TalentNest Technologies"}</TableCell>
+                <TableCell><Badge>{invitation.status}</Badge></TableCell>
+                <TableCell>{invitation.sentAt ? new Date(invitation.sentAt).toLocaleString() : "—"}</TableCell>
+                <TableCell>{new Date(invitation.expiresAt).toLocaleString()}</TableCell>
+                <TableCell className="max-w-64 truncate">{invitation.lastError ?? "—"}</TableCell>
+                <TableCell>
+                  <div className="flex gap-1">
+                    <Button variant="ghost" size="icon-sm" onClick={() => void onAction(invitation, "resend")}><RotateCcw className="size-4" /><span className="sr-only">Resend</span></Button>
+                    <Button variant="ghost" size="icon-sm" onClick={() => void onAction(invitation, "expire")}><XCircle className="size-4" /><span className="sr-only">Expire</span></Button>
+                    <Button variant="ghost" size="icon-sm" onClick={() => void onAction(invitation, "revoke")}><UserMinus className="size-4" /><span className="sr-only">Revoke</span></Button>
+                  </div>
+                </TableCell>
+              </tr>
+            ))}
+            {!invitations.length && (
+              <tr><TableCell colSpan={9} className="py-10 text-center text-muted-foreground">No invitations found.</TableCell></tr>
+            )}
+          </tbody>
+        </Table>
+      </CardContent>
+    </Card>
+  )
+}
+
+function RoleDirectory({ roles }: { roles: RoleType[] }) {
+  return (
+    <Card>
+      <CardHeader>
+        <p className="font-semibold">Roles</p>
+        <p className="text-sm text-muted-foreground">Roles available for your management scope.</p>
+      </CardHeader>
+      <CardContent>
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          {roles.map((role) => (
+            <div key={role} className="rounded-lg border p-3">
+              <p className="font-medium">{ROLE_LABELS[role]}</p>
+              <p className="mt-1 text-xs text-muted-foreground">{role}</p>
+            </div>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+function PermissionMatrix({
+  permissions,
+  onToggle,
+}: {
+  permissions: RolePermissionRow[]
+  onToggle: (
+    row: RolePermissionRow,
+    key: keyof Pick<RolePermissionRow, "canView" | "canCreate" | "canEdit" | "canDelete" | "canApprove" | "canExport">,
+  ) => Promise<void>
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <p className="font-semibold">Permission Matrix</p>
+        <p className="text-sm text-muted-foreground">Database-backed role permissions used by server-side route checks.</p>
+      </CardHeader>
+      <CardContent className="max-h-[34rem] overflow-auto p-0">
+        <Table className="min-w-[900px]">
+          <thead className="sticky top-0 bg-card">
+            <tr>
+              <TableHead>Role</TableHead>
+              <TableHead>Module</TableHead>
+              <TableHead>View</TableHead>
+              <TableHead>Create</TableHead>
+              <TableHead>Edit</TableHead>
+              <TableHead>Delete</TableHead>
+              <TableHead>Approve</TableHead>
+              <TableHead>Export</TableHead>
+            </tr>
+          </thead>
+          <tbody>
+            {permissions.map((permission) => (
+              <tr key={permission.id}>
+                <TableCell>{ROLE_LABELS[permission.role]}</TableCell>
+                <TableCell>{permission.module.replaceAll("_", " ")}</TableCell>
+                <TableCell>{toggle(permission, "canView", onToggle)}</TableCell>
+                <TableCell>{toggle(permission, "canCreate", onToggle)}</TableCell>
+                <TableCell>{toggle(permission, "canEdit", onToggle)}</TableCell>
+                <TableCell>{toggle(permission, "canDelete", onToggle)}</TableCell>
+                <TableCell>{toggle(permission, "canApprove", onToggle)}</TableCell>
+                <TableCell>{toggle(permission, "canExport", onToggle)}</TableCell>
+              </tr>
+            ))}
+            {!permissions.length && (
+              <tr><TableCell colSpan={8} className="py-10 text-center text-muted-foreground">No role permissions found.</TableCell></tr>
+            )}
+          </tbody>
+        </Table>
+      </CardContent>
+    </Card>
+  )
+}
+
+function toggle(
+  row: RolePermissionRow,
+  key: keyof Pick<RolePermissionRow, "canView" | "canCreate" | "canEdit" | "canDelete" | "canApprove" | "canExport">,
+  onToggle: (
+    row: RolePermissionRow,
+    key: keyof Pick<RolePermissionRow, "canView" | "canCreate" | "canEdit" | "canDelete" | "canApprove" | "canExport">,
+  ) => Promise<void>,
+) {
+  return (
+    <Button type="button" variant={row[key] ? "secondary" : "ghost"} size="xs" onClick={() => void onToggle(row, key)}>
+      {row[key] ? "Yes" : "No"}
+    </Button>
+  )
 }
 
 function Field({ label, children }: { label: string; children: ReactNode }) {

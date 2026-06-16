@@ -248,6 +248,7 @@ model Organization {
   subscription                 OrganizationSubscription?
   featureOverride              OrganizationFeatureOverride?
   invitations                  OrganizationInvitation[]
+  userInvitations              UserInvitation[]
 }
 
 model OrganizationSubscription {
@@ -306,6 +307,36 @@ model OrganizationInvitation {
   expiresAt      DateTime
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([email, status])
+  @@index([expiresAt])
+}
+
+model UserInvitation {
+  id                String                       @id @default(cuid())
+  organizationId    String?
+  staffingCompanyId String?
+  departmentId      String?
+  email             String
+  firstName         String
+  lastName          String
+  role              String
+  status            OrganizationInvitationStatus @default(PENDING)
+  token             String                       @unique
+  invitedByUserId   String?
+  invitedAt         DateTime                     @default(now())
+  sentAt            DateTime?
+  lastError         String?
+  acceptedAt        DateTime?
+  expiresAt         DateTime
+  createdAt         DateTime                     @default(now())
+  updatedAt         DateTime                     @updatedAt
+
+  organization    Organization?    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  staffingCompany StaffingCompany? @relation(fields: [staffingCompanyId], references: [id], onDelete: SetNull)
+  department      Department?      @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  invitedBy       User?            @relation("UserInvitationInvitedBy", fields: [invitedByUserId], references: [id], onDelete: SetNull)
 
   @@index([organizationId])
   @@index([email, status])
@@ -389,6 +420,7 @@ model Department {
   property              Property               @relation(fields: [propertyId], references: [id], onDelete: Cascade)
   employees             Employee[]
   users                 User[]
+  userInvitations       UserInvitation[]
   shifts                Shift[]
   attendanceRecords     AttendanceRecord[]
   weeklyAttendanceLines WeeklyAttendanceLine[]
@@ -488,10 +520,30 @@ model User {
   releasedFreezes                 AttendanceFreeze[]      @relation("ReleasedBy")
   approvedWeeklyAttendanceBatches WeeklyAttendanceBatch[] @relation("WeeklyAttendanceApprovedBy")
   auditLogs                       AuditLog[]
+  sentUserInvitations             UserInvitation[]       @relation("UserInvitationInvitedBy")
 
   @@index([organizationId])
   @@index([staffingCompanyId])
   @@index([departmentId])
+}
+
+model RolePermission {
+  id         String   @id @default(cuid())
+  role       String
+  module     String
+  canView    Boolean  @default(false)
+  canCreate  Boolean  @default(false)
+  canEdit    Boolean  @default(false)
+  canDelete  Boolean  @default(false)
+  canApprove Boolean  @default(false)
+  canExport  Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([role, module])
+  @@index([role])
+  @@index([module])
+  @@map("role_permissions")
 }
 
 model SystemSetting {
@@ -532,6 +584,7 @@ model StaffingCompany {
   weeklyAttendanceLines    WeeklyAttendanceLine[]
   weeklyAttendanceInvoices WeeklyAttendanceInvoice[]
   users                    User[]
+  userInvitations          UserInvitation[]
 }
 
 model AttendanceDevice {

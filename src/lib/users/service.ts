@@ -3,20 +3,21 @@ import { clerkClient } from "@clerk/nextjs/server"
 import { hash } from "bcryptjs"
 
 import { createAuditLog } from "@/src/lib/audit"
+import { resetEmployeePin } from "@/src/lib/employees/service"
 import { prisma } from "@/src/lib/prisma"
 import type { CurrentUser } from "@/src/lib/rbac/current-user"
 import { AuthorizationError } from "@/src/lib/rbac/errors"
 import { Role, ROLES, type Role as RoleType } from "@/src/lib/rbac/roles"
 import type { UserInput } from "@/src/lib/users/validation"
 
-const platformRoles: RoleType[] = [Role.PLATFORM_OWNER, Role.PLATFORM_ADMIN]
+const platformRoles: RoleType[] = [Role.PLATFORM_OWNER, Role.PLATFORM_ADMIN, Role.PLATFORM_OPERATIONS]
 const staffingRoles: RoleType[] = [
   Role.STAFFING_ADMIN, Role.STAFFING_BILLING, Role.STAFFING_OWNER,
   Role.RECRUITER, Role.ACCOUNT_MANAGER,
 ]
 const propertyRoles: RoleType[] = [
   Role.PROPERTY_MANAGER, Role.FRONT_DESK, Role.HOUSEKEEPING,
-  Role.MAINTENANCE, Role.NIGHT_AUDITOR,
+  Role.MAINTENANCE, Role.NIGHT_AUDITOR, Role.REGIONAL_MANAGER,
 ]
 
 const userInclude = {
@@ -197,8 +198,23 @@ function manageableRoles(actor: CurrentUser): RoleType[] {
       return [...ROLES]
     case Role.PLATFORM_ADMIN:
       return ROLES.filter((role) => !platformRoles.includes(role))
+    case Role.PLATFORM_OPERATIONS:
+      return [Role.ORGANIZATION_OWNER]
     case Role.ORGANIZATION_OWNER:
       return ROLES.filter((role) => !platformRoles.includes(role))
+    case Role.HR_OPERATIONS_ADMIN:
+      return [
+        Role.HR_OPERATIONS_ADMIN,
+        Role.FINANCE_ADMIN,
+        Role.AUDIT_ADMIN,
+        Role.REGIONAL_MANAGER,
+        Role.PROPERTY_MANAGER,
+        Role.EMPLOYEE,
+        Role.FRONT_DESK,
+        Role.HOUSEKEEPING,
+        Role.MAINTENANCE,
+        Role.NIGHT_AUDITOR,
+      ]
     case Role.CORPORATE_ADMIN:
       return ROLES.filter(
         (role) => !platformRoles.includes(role) && role !== Role.ORGANIZATION_OWNER,
@@ -211,8 +227,10 @@ function manageableRoles(actor: CurrentUser): RoleType[] {
 function canManageUser(actor: CurrentUser, target: { role: string; organizationId: string | null }) {
   if (actor.role === Role.PLATFORM_OWNER) return true
   if (actor.role === Role.PLATFORM_ADMIN) return !platformRoles.includes(target.role as RoleType)
+  if (actor.role === Role.PLATFORM_OPERATIONS) return target.role === Role.ORGANIZATION_OWNER
   if (!actor.organizationId || actor.organizationId !== target.organizationId) return false
   if (actor.role === Role.ORGANIZATION_OWNER) return !platformRoles.includes(target.role as RoleType)
+  if (actor.role === Role.HR_OPERATIONS_ADMIN) return !platformRoles.includes(target.role as RoleType) && target.role !== Role.ORGANIZATION_OWNER
   return actor.role === Role.CORPORATE_ADMIN && target.role !== Role.ORGANIZATION_OWNER && !platformRoles.includes(target.role as RoleType)
 }
 
@@ -288,4 +306,90 @@ function auditUser(action: string, userId: string, actor: CurrentUser, organizat
     userId: actor.id,
     organizationId: organizationId ?? actor.organizationId,
   })
+}
+
+export async function resetUserPassword(id: string, temporaryPassword: string, actor: CurrentUser) {
+  const target = await getTarget(id)
+  assertCanManageUser(actor, target)
+  const user = await prisma.user.findUnique({ where: { id }, select: { clerkUserId: true, organizationId: true } })
+  if (!user) throw new Error("User not found.")
+
+  const temporaryPasswordHash = await hash(temporaryPassword, 12)
+  if (user.clerkUserId) {
+    const client = await clerkClient()
+    await client.users.updateUser(user.clerkUserId, { password: temporaryPassword })
+  }
+
+  const updated = await prisma.user.update({
+    where: { id },
+    data: {
+      temporaryPassword: temporaryPasswordHash,
+      mustChangePassword: true,
+      status: RecordStatus.ACTIVE,
+    },
+    include: userInclude,
+  })
+  await auditUser("PASSWORD_RESET", id, actor, updated.organizationId)
+  return { ...updated, temporaryPassword: undefined }
+}
+
+export async function transferUserProperty(id: string, propertyIds: string[], actor: CurrentUser) {
+  const target = await getTarget(id)
+  assertCanManageUser(actor, target)
+  if (!target.organizationId) throw new Error("Organization user is required.")
+  const count = await prisma.property.count({
+    where: { id: { in: propertyIds }, organizationId: target.organizationId },
+  })
+  if (count !== propertyIds.length) throw new Error("One or more properties do not belong to the user's organization.")
+
+  const user = await prisma.$transaction(async (tx) => {
+    await tx.userPropertyAccess.deleteMany({ where: { userId: id } })
+    return tx.user.update({
+      where: { id },
+      data: { propertyAccesses: { create: [...new Set(propertyIds)].map((propertyId) => ({ propertyId })) } },
+      include: userInclude,
+    })
+  })
+  await auditUser("PROPERTY_TRANSFERRED", id, actor, user.organizationId)
+  return user
+}
+
+export async function transferUserDepartment(id: string, departmentId: string | null, actor: CurrentUser) {
+  const target = await getTarget(id)
+  assertCanManageUser(actor, target)
+  if (departmentId && target.organizationId) {
+    const department = await prisma.department.findUnique({
+      where: { id: departmentId },
+      select: { organizationId: true },
+    })
+    if (!department || department.organizationId !== target.organizationId) {
+      throw new Error("Department does not belong to the user's organization.")
+    }
+  }
+  const user = await prisma.user.update({ where: { id }, data: { departmentId }, include: userInclude })
+  await auditUser("TRANSFER_DEPARTMENT", id, actor, user.organizationId)
+  return user
+}
+
+export async function resetUserPin(id: string, pin: string, actor: CurrentUser) {
+  const target = await prisma.user.findUnique({
+    where: { id },
+    select: { email: true, organizationId: true, role: true },
+  })
+  if (!target) throw new Error("User not found.")
+  assertCanManageUser(actor, target)
+  if (!target.organizationId) throw new Error("Only organization users can have employee PINs.")
+
+  const employee = await prisma.employee.findFirst({
+    where: {
+      organizationId: target.organizationId,
+      email: { equals: target.email, mode: "insensitive" },
+    },
+    select: { id: true },
+  })
+  if (!employee) throw new Error("No employee profile is linked to this user's email.")
+
+  const updated = await resetEmployeePin(employee.id, pin, actor)
+  await auditUser("PIN_RESET", id, actor, target.organizationId)
+  return updated
 }

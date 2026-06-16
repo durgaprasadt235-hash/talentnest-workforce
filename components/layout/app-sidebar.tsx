@@ -84,6 +84,11 @@ const roleNavigation: Record<RoleType, NavSection[]> = {
     { label: "Finance", items: [item.invoices, item.payments] },
     { label: "Settings", items: [item.users, item.roles, item.kioskSetup] },
   ],
+  [Role.PLATFORM_OPERATIONS]: [
+    { items: [item.dashboard] },
+    { label: "Platform", items: [item.organizations, item.platformAnalytics] },
+    { label: "Administration", items: [item.users, item.roles, item.platformAuditLogs, item.deviceSupport] },
+  ],
   [Role.ORGANIZATION_OWNER]: [
     { items: [item.dashboard] },
     { label: "Organization", items: [item.legalEntities, item.properties, item.departments] },
@@ -97,6 +102,22 @@ const roleNavigation: Record<RoleType, NavSection[]> = {
     { label: "Organization", items: [item.properties, item.departments] },
     { label: "Workforce", items: [item.employees] },
     { label: "Operations", items: [item.schedules, item.attendance, item.kiosk, item.weeklyAttendance, item.timesheets] },
+  ],
+  [Role.HR_OPERATIONS_ADMIN]: [
+    { items: [item.dashboard] },
+    { label: "Organization", items: [item.properties, item.departments] },
+    { label: "Workforce", items: [item.employees] },
+    { label: "Operations", items: [item.schedules, item.attendance, item.kiosk, item.weeklyAttendance, item.timesheets] },
+    { label: "Settings", items: [item.users, item.auditLogs] },
+  ],
+  [Role.FINANCE_ADMIN]: [
+    { items: [item.dashboard] },
+    { label: "Finance", items: [item.weeklyAttendance, item.invoices, item.payments] },
+    { label: "Settings", items: [item.auditLogs] },
+  ],
+  [Role.AUDIT_ADMIN]: [
+    { items: [item.dashboard] },
+    { label: "Audit", items: [item.auditLogs] },
   ],
   [Role.CORPORATE_ADMIN]: [
     { items: [item.dashboard] },

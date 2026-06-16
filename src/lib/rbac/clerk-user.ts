@@ -5,6 +5,7 @@ import { prisma } from "@/src/lib/prisma"
 import { getOrganizationFeatureAccess } from "@/src/lib/features/organization-feature-access"
 import type { CurrentUser } from "@/src/lib/rbac/current-user"
 import { AuthorizationError } from "@/src/lib/rbac/errors"
+import { listEffectivePermissions } from "@/src/lib/rbac/permission-service"
 import { Role, ROLES } from "@/src/lib/rbac/roles"
 
 export async function resolveClerkCurrentUser(): Promise<CurrentUser> {
@@ -109,6 +110,23 @@ export async function resolveClerkCurrentUser(): Promise<CurrentUser> {
     })
   }
 
+  await prisma.userInvitation.updateMany({
+    where: {
+      email: { equals: user.email, mode: "insensitive" },
+      status: {
+        in: [
+          OrganizationInvitationStatus.PENDING,
+          OrganizationInvitationStatus.SENT,
+        ],
+      },
+      expiresAt: { gte: new Date() },
+    },
+    data: {
+      status: OrganizationInvitationStatus.ACCEPTED,
+      acceptedAt: new Date(),
+    },
+  })
+
   const role = ROLES.find((candidate) => candidate === user.role)
   if (!role) {
     throw new AuthorizationError("User has an invalid TalentNest role.")
@@ -124,6 +142,7 @@ export async function resolveClerkCurrentUser(): Promise<CurrentUser> {
   const featureAccess = user.organizationId
     ? await getOrganizationFeatureAccess(user.organizationId)
     : undefined
+  const permissions = await listEffectivePermissions(role)
 
   return {
     id: user.id,
@@ -141,8 +160,10 @@ export async function resolveClerkCurrentUser(): Promise<CurrentUser> {
     mustChangePassword: user.mustChangePassword,
     companyName:
       role === Role.PLATFORM_OWNER || role === Role.PLATFORM_ADMIN
+        || role === Role.PLATFORM_OPERATIONS
         ? "TalentNest Technologies"
         : user.staffingCompany?.displayName ?? user.organization?.name ?? undefined,
     featureAccess,
+    permissions,
   }
 }
