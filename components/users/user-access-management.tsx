@@ -114,7 +114,7 @@ const selectClass =
 const platformRoles: RoleType[] = [Role.PLATFORM_OWNER, Role.PLATFORM_ADMIN]
 const propertyAssignmentRoles: RoleType[] = [
   Role.PROPERTY_MANAGER, Role.FRONT_DESK, Role.HOUSEKEEPING,
-  Role.MAINTENANCE, Role.NIGHT_AUDITOR,
+  Role.MAINTENANCE, Role.NIGHT_AUDITOR, Role.REGIONAL_MANAGER, Role.EMPLOYEE,
 ]
 const propertyEmployeeRoles: RoleType[] = [
   Role.FRONT_DESK, Role.HOUSEKEEPING, Role.MAINTENANCE, Role.NIGHT_AUDITOR, Role.EMPLOYEE,

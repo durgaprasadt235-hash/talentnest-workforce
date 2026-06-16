@@ -193,8 +193,6 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     Permission.SEND_WEEKLY_ATTENDANCE_TO_CORPORATE,
     Permission.VIEW_TIMESHEETS,
     Permission.APPROVE_TIMESHEETS,
-    Permission.VIEW_INVOICES,
-    Permission.MANAGE_INVOICES,
     Permission.VIEW_AUDIT_LOGS,
   ],
   [Role.DEPARTMENT_MANAGER]: [Permission.VIEW_AUDIT_LOGS],

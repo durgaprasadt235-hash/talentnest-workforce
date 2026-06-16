@@ -144,6 +144,16 @@ export async function resolveClerkCurrentUser(): Promise<CurrentUser> {
     : undefined
   const permissions = await listEffectivePermissions(role)
 
+  const propertyScopedRoles: Role[] = [
+    Role.REGIONAL_MANAGER,
+    Role.PROPERTY_MANAGER,
+    Role.EMPLOYEE,
+    Role.FRONT_DESK,
+    Role.HOUSEKEEPING,
+    Role.MAINTENANCE,
+    Role.NIGHT_AUDITOR,
+  ]
+
   return {
     id: user.id,
     email: user.email,
@@ -152,7 +162,7 @@ export async function resolveClerkCurrentUser(): Promise<CurrentUser> {
     role,
     organizationId: user.organizationId ?? undefined,
     propertyIds:
-      role === Role.PROPERTY_MANAGER
+      propertyScopedRoles.includes(role)
         ? user.propertyAccesses.map((access) => access.propertyId)
         : organizationProperties.map((property) => property.id),
     staffingCompanyId: user.staffingCompanyId ?? undefined,

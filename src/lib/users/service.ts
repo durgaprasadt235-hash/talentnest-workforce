@@ -17,7 +17,7 @@ const staffingRoles: RoleType[] = [
 ]
 const propertyRoles: RoleType[] = [
   Role.PROPERTY_MANAGER, Role.FRONT_DESK, Role.HOUSEKEEPING,
-  Role.MAINTENANCE, Role.NIGHT_AUDITOR, Role.REGIONAL_MANAGER,
+  Role.MAINTENANCE, Role.NIGHT_AUDITOR, Role.REGIONAL_MANAGER, Role.EMPLOYEE,
 ]
 
 const userInclude = {
