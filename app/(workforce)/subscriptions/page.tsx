@@ -1,10 +1,9 @@
 import type { Metadata } from "next"
 
-import { BillingPlans } from "@/components/billing/billing-plans"
-import { isStripeConfigured } from "@/src/lib/stripe/server"
+import { PlatformConsoleRoute } from "@/components/platform/platform-console-route"
 
 export const metadata: Metadata = { title: "Subscriptions" }
 
 export default function Page() {
-  return <BillingPlans title="Subscriptions" configured={isStripeConfigured()} />
+  return <PlatformConsoleRoute moduleKey="subscriptions" />
 }

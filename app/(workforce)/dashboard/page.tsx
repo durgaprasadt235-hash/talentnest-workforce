@@ -1,9 +1,9 @@
 import type { Metadata } from "next"
 
-import { ResourcePage } from "@/components/shared/resource-page"
+import { PlatformConsoleRoute } from "@/components/platform/platform-console-route"
 
 export const metadata: Metadata = { title: "Dashboard" }
 
 export default function Page() {
-  return <ResourcePage title="Dashboard" />
+  return <PlatformConsoleRoute moduleKey="dashboard" />
 }

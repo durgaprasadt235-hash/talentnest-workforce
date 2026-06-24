@@ -1,8 +1,8 @@
 "use client"
 
 import { useState } from "react"
-import { Show, SignInButton, SignUpButton, UserButton } from "@clerk/nextjs"
-import { Menu, ShieldCheck } from "lucide-react"
+import { Show, SignInButton, SignUpButton, SignOutButton, UserButton } from "@clerk/nextjs"
+import { Bell, HelpCircle, LogOut, Menu, Plus, Search, ShieldCheck } from "lucide-react"
 
 import { AppSidebar } from "@/components/layout/app-sidebar"
 import { useCurrentUser } from "@/components/rbac/current-user-provider"
@@ -42,10 +42,28 @@ export function AppHeader() {
           <AppSidebar onNavigate={() => setMobileOpen(false)} />
         </SheetContent>
       </Sheet>
-      <p className="ml-3 text-sm font-semibold text-foreground lg:ml-0">
+      <p className="ml-3 hidden text-sm font-semibold text-foreground sm:block lg:ml-0">
         TalentNest Workforce
       </p>
       <div className="ml-auto flex items-center gap-2">
+        <label className="relative hidden min-w-64 lg:block">
+          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <span className="sr-only">Global Search</span>
+          <input
+            placeholder="Search clients, tickets, kiosks..."
+            className="h-9 w-full rounded-lg border bg-background pl-9 pr-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+          />
+        </label>
+        <Button variant="outline" size="sm" className="hidden md:inline-flex">
+          <Plus className="size-4" />
+          Create
+        </Button>
+        <Button variant="ghost" size="icon-sm" aria-label="Notifications">
+          <Bell className="size-4" />
+        </Button>
+        <Button variant="ghost" size="icon-sm" aria-label="Help">
+          <HelpCircle className="size-4" />
+        </Button>
         {process.env.NODE_ENV !== "production" && (
           <label className="flex items-center gap-2">
             <ShieldCheck className="hidden size-4 text-muted-foreground sm:block" />
@@ -85,6 +103,11 @@ export function AppHeader() {
             </div>
           </div>
           <UserButton />
+          <SignOutButton>
+            <Button variant="ghost" size="icon-sm" aria-label="Logout">
+              <LogOut className="size-4" />
+            </Button>
+          </SignOutButton>
         </Show>
       </div>
     </header>

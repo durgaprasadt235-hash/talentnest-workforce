@@ -10,7 +10,22 @@ import { AuthorizationError } from "@/src/lib/rbac/errors"
 import { Role, ROLES, type Role as RoleType } from "@/src/lib/rbac/roles"
 import type { UserInput } from "@/src/lib/users/validation"
 
-const platformRoles: RoleType[] = [Role.PLATFORM_OWNER, Role.PLATFORM_ADMIN, Role.PLATFORM_OPERATIONS]
+const platformRoles: RoleType[] = [
+  Role.PLATFORM_OWNER,
+  Role.PLATFORM_SUPER_ADMIN,
+  Role.PLATFORM_ADMIN,
+  Role.PLATFORM_OPERATIONS,
+  Role.ONBOARDING_MANAGER,
+  Role.IMPLEMENTATION_SPECIALIST,
+  Role.CUSTOMER_SUCCESS_MANAGER,
+  Role.SUPPORT_AGENT,
+  Role.SUPPORT_MANAGER,
+  Role.BILLING_SPECIALIST,
+  Role.COMPLIANCE_OFFICER,
+  Role.SECURITY_ADMIN,
+  Role.ANALYTICS_ADMIN,
+  Role.READ_ONLY_AUDITOR,
+]
 const staffingRoles: RoleType[] = [
   Role.STAFFING_ADMIN, Role.STAFFING_BILLING, Role.STAFFING_OWNER,
   Role.RECRUITER, Role.ACCOUNT_MANAGER,

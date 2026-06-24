@@ -12,11 +12,14 @@ import {
   Clock3,
   CreditCard,
   FileCheck2,
+  Headphones,
   Hotel,
   LayoutDashboard,
   MonitorSmartphone,
   ReceiptText,
   ScrollText,
+  SearchCheck,
+  Settings,
   ShieldCheck,
   UserCog,
   Users,
@@ -43,6 +46,16 @@ type NavSection = {
 
 const item = {
   dashboard: { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
+  clients: { label: "Clients", href: "/clients", icon: Building2 },
+  onboarding: { label: "Onboarding", href: "/onboarding", icon: ClipboardCheck },
+  billing: { label: "Billing", href: "/billing", icon: ReceiptText },
+  kiosks: { label: "Kiosks", href: "/kiosks", icon: MonitorSmartphone },
+  support: { label: "Support", href: "/support", icon: Headphones },
+  security: { label: "Security", href: "/security", icon: ShieldCheck },
+  compliance: { label: "Compliance", href: "/compliance", icon: SearchCheck },
+  analytics: { label: "Analytics", href: "/analytics", icon: BarChart3 },
+  internalTeams: { label: "Internal Teams", href: "/internal-teams", icon: Users },
+  platformSettings: { label: "Platform Settings", href: "/platform-settings", icon: Settings },
   organizations: { label: "Organizations", href: "/organizations", icon: Building2 },
   subscriptions: { label: "Subscriptions", href: "/subscriptions", icon: CreditCard },
   platformBilling: { label: "Platform Billing", href: "/platform-billing", icon: ReceiptText },
@@ -70,25 +83,59 @@ const item = {
   platformAnalytics: { label: "Platform Analytics", href: "/platform-analytics", icon: BarChart3 },
 } satisfies Record<string, NavItem>
 
+const platformConsoleNavigation: NavSection[] = [
+  {
+    items: [
+      item.dashboard,
+      item.clients,
+      item.onboarding,
+      item.subscriptions,
+      item.billing,
+      item.kiosks,
+      item.support,
+      item.security,
+      item.compliance,
+      item.analytics,
+      item.internalTeams,
+      item.platformSettings,
+      item.auditLogs,
+    ],
+  },
+]
+
+const platformConsoleRoles: RoleType[] = [
+  Role.PLATFORM_OWNER,
+  Role.PLATFORM_SUPER_ADMIN,
+  Role.PLATFORM_ADMIN,
+  Role.PLATFORM_OPERATIONS,
+  Role.ONBOARDING_MANAGER,
+  Role.IMPLEMENTATION_SPECIALIST,
+  Role.CUSTOMER_SUCCESS_MANAGER,
+  Role.SUPPORT_AGENT,
+  Role.SUPPORT_MANAGER,
+  Role.FINANCE_ADMIN,
+  Role.BILLING_SPECIALIST,
+  Role.COMPLIANCE_OFFICER,
+  Role.SECURITY_ADMIN,
+  Role.ANALYTICS_ADMIN,
+  Role.READ_ONLY_AUDITOR,
+]
+
 const roleNavigation: Record<RoleType, NavSection[]> = {
-  [Role.PLATFORM_OWNER]: [
-    { items: [item.dashboard] },
-    { label: "Platform", items: [item.organizations, item.subscriptions, item.platformBilling, item.platformAnalytics] },
-    { label: "Administration", items: [item.users, item.roles, item.platformAuditLogs, item.deviceSupport] },
-  ],
-  [Role.PLATFORM_ADMIN]: [
-    { items: [item.dashboard] },
-    { label: "Organization", items: [item.organizations, item.legalEntities, item.properties] },
-    { label: "Workforce", items: [item.employees, item.staffingCompanies] },
-    { label: "Operations", items: [item.kiosk, item.weeklyAttendance] },
-    { label: "Finance", items: [item.invoices, item.payments] },
-    { label: "Settings", items: [item.users, item.roles, item.kioskSetup] },
-  ],
-  [Role.PLATFORM_OPERATIONS]: [
-    { items: [item.dashboard] },
-    { label: "Platform", items: [item.organizations, item.platformAnalytics] },
-    { label: "Administration", items: [item.users, item.roles, item.platformAuditLogs, item.deviceSupport] },
-  ],
+  [Role.PLATFORM_OWNER]: platformConsoleNavigation,
+  [Role.PLATFORM_SUPER_ADMIN]: platformConsoleNavigation,
+  [Role.PLATFORM_ADMIN]: platformConsoleNavigation,
+  [Role.PLATFORM_OPERATIONS]: platformConsoleNavigation,
+  [Role.ONBOARDING_MANAGER]: platformConsoleNavigation,
+  [Role.IMPLEMENTATION_SPECIALIST]: platformConsoleNavigation,
+  [Role.CUSTOMER_SUCCESS_MANAGER]: platformConsoleNavigation,
+  [Role.SUPPORT_AGENT]: platformConsoleNavigation,
+  [Role.SUPPORT_MANAGER]: platformConsoleNavigation,
+  [Role.BILLING_SPECIALIST]: platformConsoleNavigation,
+  [Role.COMPLIANCE_OFFICER]: platformConsoleNavigation,
+  [Role.SECURITY_ADMIN]: platformConsoleNavigation,
+  [Role.ANALYTICS_ADMIN]: platformConsoleNavigation,
+  [Role.READ_ONLY_AUDITOR]: platformConsoleNavigation,
   [Role.ORGANIZATION_OWNER]: [
     { items: [item.dashboard] },
     { label: "Organization", items: [item.legalEntities, item.properties, item.departments] },
@@ -110,11 +157,7 @@ const roleNavigation: Record<RoleType, NavSection[]> = {
     { label: "Operations", items: [item.schedules, item.attendance, item.kiosk, item.weeklyAttendance, item.timesheets] },
     { label: "Settings", items: [item.users, item.auditLogs] },
   ],
-  [Role.FINANCE_ADMIN]: [
-    { items: [item.dashboard] },
-    { label: "Finance", items: [item.weeklyAttendance, item.invoices, item.payments] },
-    { label: "Settings", items: [item.auditLogs] },
-  ],
+  [Role.FINANCE_ADMIN]: platformConsoleNavigation,
   [Role.AUDIT_ADMIN]: [
     { items: [item.dashboard] },
     { label: "Audit", items: [item.auditLogs] },
@@ -186,7 +229,8 @@ const roleNavigation: Record<RoleType, NavSection[]> = {
 export function AppSidebar({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname()
   const { currentUser } = useCurrentUser()
-  const bypass = currentUser.role === Role.PLATFORM_OWNER || currentUser.role === Role.PLATFORM_ADMIN
+  const isPlatformConsole = platformConsoleRoles.includes(currentUser.role)
+  const bypass = isPlatformConsole
   const navigation = roleNavigation[currentUser.role]
     .map((section) => ({
       ...section,

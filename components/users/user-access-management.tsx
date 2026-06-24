@@ -111,7 +111,22 @@ const emptyForm: UserForm = {
 
 const selectClass =
   "h-10 w-full rounded-lg border bg-background px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-const platformRoles: RoleType[] = [Role.PLATFORM_OWNER, Role.PLATFORM_ADMIN]
+const platformRoles: RoleType[] = [
+  Role.PLATFORM_OWNER,
+  Role.PLATFORM_SUPER_ADMIN,
+  Role.PLATFORM_ADMIN,
+  Role.PLATFORM_OPERATIONS,
+  Role.ONBOARDING_MANAGER,
+  Role.IMPLEMENTATION_SPECIALIST,
+  Role.CUSTOMER_SUCCESS_MANAGER,
+  Role.SUPPORT_AGENT,
+  Role.SUPPORT_MANAGER,
+  Role.BILLING_SPECIALIST,
+  Role.COMPLIANCE_OFFICER,
+  Role.SECURITY_ADMIN,
+  Role.ANALYTICS_ADMIN,
+  Role.READ_ONLY_AUDITOR,
+]
 const propertyAssignmentRoles: RoleType[] = [
   Role.PROPERTY_MANAGER, Role.FRONT_DESK, Role.HOUSEKEEPING,
   Role.MAINTENANCE, Role.NIGHT_AUDITOR, Role.REGIONAL_MANAGER, Role.EMPLOYEE,

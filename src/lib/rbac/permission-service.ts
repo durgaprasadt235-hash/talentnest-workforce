@@ -27,6 +27,30 @@ export type RolePermissionInput = {
 }
 
 const permissionModuleMap: Record<Permission, { module: string; action: PermissionAction }> = {
+  VIEW_PLATFORM_DASHBOARD: { module: "PLATFORM_DASHBOARD", action: "canView" },
+  VIEW_PLATFORM_CLIENTS: { module: "PLATFORM_CLIENTS", action: "canView" },
+  MANAGE_PLATFORM_CLIENTS: { module: "PLATFORM_CLIENTS", action: "canEdit" },
+  VIEW_PLATFORM_ONBOARDING: { module: "PLATFORM_ONBOARDING", action: "canView" },
+  MANAGE_PLATFORM_ONBOARDING: { module: "PLATFORM_ONBOARDING", action: "canEdit" },
+  VIEW_PLATFORM_SUBSCRIPTIONS: { module: "PLATFORM_SUBSCRIPTIONS", action: "canView" },
+  MANAGE_PLATFORM_SUBSCRIPTIONS: { module: "PLATFORM_SUBSCRIPTIONS", action: "canEdit" },
+  VIEW_PLATFORM_BILLING: { module: "PLATFORM_BILLING", action: "canView" },
+  MANAGE_PLATFORM_BILLING: { module: "PLATFORM_BILLING", action: "canEdit" },
+  VIEW_PLATFORM_KIOSKS: { module: "PLATFORM_KIOSKS", action: "canView" },
+  MANAGE_PLATFORM_KIOSKS: { module: "PLATFORM_KIOSKS", action: "canEdit" },
+  VIEW_PLATFORM_SUPPORT: { module: "PLATFORM_SUPPORT", action: "canView" },
+  MANAGE_PLATFORM_SUPPORT: { module: "PLATFORM_SUPPORT", action: "canEdit" },
+  VIEW_PLATFORM_SECURITY: { module: "PLATFORM_SECURITY", action: "canView" },
+  MANAGE_PLATFORM_SECURITY: { module: "PLATFORM_SECURITY", action: "canEdit" },
+  VIEW_PLATFORM_COMPLIANCE: { module: "PLATFORM_COMPLIANCE", action: "canView" },
+  MANAGE_PLATFORM_COMPLIANCE: { module: "PLATFORM_COMPLIANCE", action: "canEdit" },
+  VIEW_PLATFORM_ANALYTICS: { module: "PLATFORM_ANALYTICS", action: "canView" },
+  MANAGE_PLATFORM_ANALYTICS: { module: "PLATFORM_ANALYTICS", action: "canEdit" },
+  VIEW_PLATFORM_INTERNAL_TEAMS: { module: "PLATFORM_INTERNAL_TEAMS", action: "canView" },
+  MANAGE_PLATFORM_INTERNAL_TEAMS: { module: "PLATFORM_INTERNAL_TEAMS", action: "canEdit" },
+  VIEW_PLATFORM_SETTINGS: { module: "PLATFORM_SETTINGS", action: "canView" },
+  MANAGE_PLATFORM_SETTINGS: { module: "PLATFORM_SETTINGS", action: "canEdit" },
+  VIEW_PLATFORM_AUDIT_LOGS: { module: "PLATFORM_AUDIT_LOGS", action: "canView" },
   VIEW_ORGANIZATION: { module: "ORGANIZATIONS", action: "canView" },
   MANAGE_ORGANIZATION: { module: "ORGANIZATIONS", action: "canEdit" },
   VIEW_PROPERTIES: { module: "PROPERTIES", action: "canView" },
@@ -105,12 +129,6 @@ let seeded = false
 
 async function ensureRolePermissionsSeeded() {
   if (seeded) return
-
-  const count = await prisma.rolePermission.count()
-  if (count > 0) {
-    seeded = true
-    return
-  }
 
   await prisma.$transaction(
     defaultRolePermissionRows().map((row) =>

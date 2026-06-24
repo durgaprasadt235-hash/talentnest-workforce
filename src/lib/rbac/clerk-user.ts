@@ -8,6 +8,23 @@ import { AuthorizationError } from "@/src/lib/rbac/errors"
 import { listEffectivePermissions } from "@/src/lib/rbac/permission-service"
 import { Role, ROLES } from "@/src/lib/rbac/roles"
 
+const platformRoles: Role[] = [
+  Role.PLATFORM_OWNER,
+  Role.PLATFORM_SUPER_ADMIN,
+  Role.PLATFORM_ADMIN,
+  Role.PLATFORM_OPERATIONS,
+  Role.ONBOARDING_MANAGER,
+  Role.IMPLEMENTATION_SPECIALIST,
+  Role.CUSTOMER_SUCCESS_MANAGER,
+  Role.SUPPORT_AGENT,
+  Role.SUPPORT_MANAGER,
+  Role.BILLING_SPECIALIST,
+  Role.COMPLIANCE_OFFICER,
+  Role.SECURITY_ADMIN,
+  Role.ANALYTICS_ADMIN,
+  Role.READ_ONLY_AUDITOR,
+]
+
 export async function resolveClerkCurrentUser(): Promise<CurrentUser> {
   const clerkUser = await currentUser()
 
@@ -169,8 +186,7 @@ export async function resolveClerkCurrentUser(): Promise<CurrentUser> {
     departmentId: user.departmentId ?? undefined,
     mustChangePassword: user.mustChangePassword,
     companyName:
-      role === Role.PLATFORM_OWNER || role === Role.PLATFORM_ADMIN
-        || role === Role.PLATFORM_OPERATIONS
+      platformRoles.includes(role)
         ? "TalentNest Technologies"
         : user.staffingCompany?.displayName ?? user.organization?.name ?? undefined,
     featureAccess,
