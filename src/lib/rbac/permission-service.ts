@@ -112,7 +112,6 @@ export async function updateRolePermission(input: RolePermissionInput) {
 }
 
 export async function listEffectivePermissions(role: Role): Promise<Permission[]> {
-  await ensureRolePermissionsSeeded()
   const rows = await prisma.rolePermission.findMany({ where: { role } })
 
   if (!rows.length) return [...ROLE_PERMISSIONS[role]]
@@ -120,7 +119,11 @@ export async function listEffectivePermissions(role: Role): Promise<Permission[]
   return Object.entries(permissionModuleMap)
     .filter(([, target]) => {
       const row = rows.find((candidate) => candidate.module === target.module)
-      return Boolean(row?.[target.action])
+      if (row) return Boolean(row[target.action])
+      return ROLE_PERMISSIONS[role].some((permission) => {
+        const fallback = permissionModuleMap[permission]
+        return fallback.module === target.module && fallback.action === target.action
+      })
     })
     .map(([permission]) => permission as Permission)
 }
@@ -130,15 +133,10 @@ let seeded = false
 async function ensureRolePermissionsSeeded() {
   if (seeded) return
 
-  await prisma.$transaction(
-    defaultRolePermissionRows().map((row) =>
-      prisma.rolePermission.upsert({
-        where: { role_module: { role: row.role, module: row.module } },
-        create: row,
-        update: row,
-      }),
-    ),
-  )
+  await prisma.rolePermission.createMany({
+    data: defaultRolePermissionRows(),
+    skipDuplicates: true,
+  })
   seeded = true
 }
 

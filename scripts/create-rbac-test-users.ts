@@ -14,6 +14,7 @@ const TEST_ORGANIZATION_SLUG = "rbac-validation-hotel-group"
 const TEST_ORGANIZATION_NAME = "RBAC Validation Hotel Group"
 const PRIMARY_PROPERTY_CODE = "RBAC-PROP-1"
 const SECONDARY_PROPERTY_CODE = "RBAC-PROP-2"
+const TEST_PLATFORM_ROLES: RoleType[] = [Role.PLATFORM_ADMIN, Role.PLATFORM_OPERATIONS]
 
 type TestAccount = {
   email: string
@@ -26,10 +27,34 @@ type TestAccount = {
 
 const testAccounts: TestAccount[] = [
   {
+    email: "testplatformadmin@talentnesttest.com",
+    firstName: "Test",
+    lastName: "Platform Admin",
+    role: Role.PLATFORM_ADMIN,
+    propertyScope: "none",
+    department: false,
+  },
+  {
     email: "testplatformops@talentnesttest.com",
     firstName: "Test",
     lastName: "Platform Operations",
     role: Role.PLATFORM_OPERATIONS,
+    propertyScope: "none",
+    department: false,
+  },
+  {
+    email: "testorgowner@talentnesttest.com",
+    firstName: "Test",
+    lastName: "Organization Owner",
+    role: Role.ORGANIZATION_OWNER,
+    propertyScope: "none",
+    department: false,
+  },
+  {
+    email: "testorgadmin@talentnesttest.com",
+    firstName: "Test",
+    lastName: "Organization Admin",
+    role: Role.CORPORATE_ADMIN,
     propertyScope: "none",
     department: false,
   },
@@ -105,12 +130,15 @@ async function main() {
   const { organization, primaryProperty, secondaryProperty, department } = await ensureTestHierarchy()
   const propertyIds = [primaryProperty.id, secondaryProperty.id]
   const clerk = await clerkClient()
+  await clerk.instance.updateOrganizationSettings({ enabled: false })
   const passwordHash = await hash(TEST_PASSWORD, 12)
 
   const results = []
 
   for (const account of testAccounts) {
-    const organizationId = account.role === Role.PLATFORM_OPERATIONS ? null : organization.id
+    const organizationId = TEST_PLATFORM_ROLES.includes(account.role)
+      ? null
+      : organization.id
     const assignedPropertyIds =
       account.propertyScope === "regional"
         ? propertyIds
@@ -194,7 +222,6 @@ async function main() {
   await ensureEmployeeProfile(organization.id, primaryProperty.id, department.id)
 
   console.log(JSON.stringify({
-    testPassword: TEST_PASSWORD,
     organization: { id: organization.id, name: organization.name },
     properties: [
       { id: primaryProperty.id, name: primaryProperty.name },

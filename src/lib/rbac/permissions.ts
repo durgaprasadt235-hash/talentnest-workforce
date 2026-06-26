@@ -66,24 +66,6 @@ export const Permission = {
 
 export type Permission = (typeof Permission)[keyof typeof Permission]
 
-const allViewPermissions: Permission[] = [
-  Permission.VIEW_ORGANIZATION,
-  Permission.VIEW_PROPERTIES,
-  Permission.VIEW_LEGAL_ENTITIES,
-  Permission.VIEW_DEPARTMENTS,
-  Permission.VIEW_EMPLOYEES,
-  Permission.VIEW_STAFFING_COMPANIES,
-  Permission.VIEW_SCHEDULES,
-  Permission.VIEW_ATTENDANCE,
-  Permission.VIEW_DEVICES,
-  Permission.VIEW_WEEKLY_ATTENDANCE,
-  Permission.VIEW_TIMESHEETS,
-  Permission.VIEW_INVOICES,
-  Permission.VIEW_PAYMENTS,
-  Permission.VIEW_USERS,
-  Permission.VIEW_AUDIT_LOGS,
-]
-
 const allPermissions = Object.values(Permission)
 
 export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
@@ -191,18 +173,13 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     Permission.VIEW_PLATFORM_CLIENTS,
   ],
   [Role.ORGANIZATION_OWNER]: [
-    ...allViewPermissions,
+    Permission.VIEW_ORGANIZATION,
+    Permission.MANAGE_ORGANIZATION,
+    Permission.VIEW_PROPERTIES,
     Permission.MANAGE_PROPERTIES,
-    Permission.MANAGE_DEPARTMENTS,
-    Permission.MANAGE_EMPLOYEES,
-    Permission.MANAGE_STAFFING_COMPANIES,
-    Permission.MANAGE_SCHEDULES,
     Permission.MANAGE_USERS,
-    Permission.MANAGE_LEGAL_ENTITIES,
-    Permission.MANAGE_DEVICES,
-    Permission.MANAGE_CORPORATE_WEEKLY_ATTENDANCE,
-    Permission.GENERATE_WEEKLY_ATTENDANCE,
-    Permission.SEND_WEEKLY_ATTENDANCE_TO_FINANCE,
+    Permission.VIEW_USERS,
+    Permission.VIEW_AUDIT_LOGS,
   ],
   [Role.REGIONAL_MANAGER]: [
     Permission.VIEW_PROPERTIES, Permission.MANAGE_PROPERTIES, Permission.VIEW_DEPARTMENTS,
@@ -212,22 +189,16 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     Permission.VIEW_TIMESHEETS, Permission.VIEW_USERS,
   ],
   [Role.HR_OPERATIONS_ADMIN]: [
-    Permission.VIEW_ORGANIZATION,
     Permission.VIEW_PROPERTIES,
-    Permission.VIEW_LEGAL_ENTITIES,
     Permission.VIEW_DEPARTMENTS,
-    Permission.MANAGE_DEPARTMENTS,
     Permission.VIEW_EMPLOYEES,
     Permission.MANAGE_EMPLOYEES,
     Permission.VIEW_SCHEDULES,
     Permission.MANAGE_SCHEDULES,
     Permission.VIEW_ATTENDANCE,
     Permission.MANAGE_ATTENDANCE,
-    Permission.VIEW_DEVICES,
-    Permission.VIEW_WEEKLY_ATTENDANCE,
     Permission.VIEW_TIMESHEETS,
-    Permission.VIEW_USERS,
-    Permission.MANAGE_USERS,
+    Permission.APPROVE_TIMESHEETS,
     Permission.VIEW_AUDIT_LOGS,
   ],
   [Role.FINANCE_ADMIN]: [

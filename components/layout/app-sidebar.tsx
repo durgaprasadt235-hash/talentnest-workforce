@@ -11,6 +11,7 @@ import {
   ClipboardCheck,
   Clock3,
   CreditCard,
+  Download,
   FileCheck2,
   Headphones,
   Hotel,
@@ -81,6 +82,16 @@ const item = {
   deviceSupport: { label: "Device Support", href: "/devices", icon: MonitorSmartphone },
   kioskSetup: { label: "Kiosk Setup", href: "/devices", icon: MonitorSmartphone, feature: FeatureKey.KIOSK },
   platformAnalytics: { label: "Platform Analytics", href: "/platform-analytics", icon: BarChart3 },
+  reports: { label: "Reports", href: "/audit-logs", icon: BarChart3 },
+  settings: { label: "Settings", href: "/users", icon: Settings },
+  payrollReview: { label: "Payroll Review", href: "/weekly-attendance", icon: CalendarCheck2, feature: FeatureKey.TIMESHEETS },
+  laborCost: { label: "Labor Cost", href: "/payments", icon: CircleDollarSign, feature: FeatureKey.PAYMENTS },
+  exports: { label: "Exports", href: "/weekly-attendance", icon: Download, feature: FeatureKey.TIMESHEETS },
+  financeReports: { label: "Finance Reports", href: "/invoices", icon: BarChart3, feature: FeatureKey.INVOICES },
+  propertyDashboard: { label: "Property Dashboard", href: "/dashboard", icon: LayoutDashboard },
+  todaysSchedule: { label: "Today's Schedule", href: "/schedules", icon: CalendarDays, feature: FeatureKey.SCHEDULING },
+  exceptions: { label: "Exceptions", href: "/attendance", icon: SearchCheck, feature: FeatureKey.ATTENDANCE },
+  coverageRequests: { label: "Coverage Requests", href: "/schedules", icon: UsersRound, feature: FeatureKey.SCHEDULING },
 } satisfies Record<string, NavItem>
 
 const platformConsoleNavigation: NavSection[] = [
@@ -97,6 +108,7 @@ const platformConsoleNavigation: NavSection[] = [
       item.compliance,
       item.analytics,
       item.internalTeams,
+      item.users,
       item.platformSettings,
       item.auditLogs,
     ],
@@ -113,7 +125,6 @@ const platformConsoleRoles: RoleType[] = [
   Role.CUSTOMER_SUCCESS_MANAGER,
   Role.SUPPORT_AGENT,
   Role.SUPPORT_MANAGER,
-  Role.FINANCE_ADMIN,
   Role.BILLING_SPECIALIST,
   Role.COMPLIANCE_OFFICER,
   Role.SECURITY_ADMIN,
@@ -138,11 +149,7 @@ const roleNavigation: Record<RoleType, NavSection[]> = {
   [Role.READ_ONLY_AUDITOR]: platformConsoleNavigation,
   [Role.ORGANIZATION_OWNER]: [
     { items: [item.dashboard] },
-    { label: "Organization", items: [item.legalEntities, item.properties, item.departments] },
-    { label: "Workforce", items: [item.employees, item.staffingCompanies] },
-    { label: "Operations", items: [item.schedules, item.attendance, item.kiosk, item.weeklyAttendance, item.timesheets] },
-    { label: "Finance", items: [item.invoices, item.payments] },
-    { label: "Settings", items: [item.users, item.auditLogs] },
+    { label: "Ownership", items: [item.properties, item.users, item.reports, item.settings, item.auditLogs] },
   ],
   [Role.REGIONAL_MANAGER]: [
     { items: [item.dashboard] },
@@ -152,29 +159,23 @@ const roleNavigation: Record<RoleType, NavSection[]> = {
   ],
   [Role.HR_OPERATIONS_ADMIN]: [
     { items: [item.dashboard] },
-    { label: "Organization", items: [item.properties, item.departments] },
-    { label: "Workforce", items: [item.employees] },
-    { label: "Operations", items: [item.schedules, item.attendance, item.kiosk, item.weeklyAttendance, item.timesheets] },
-    { label: "Settings", items: [item.users, item.auditLogs] },
+    { label: "Workforce", items: [item.employees, item.schedules, item.attendance, item.timesheets, item.reports] },
   ],
-  [Role.FINANCE_ADMIN]: platformConsoleNavigation,
+  [Role.FINANCE_ADMIN]: [
+    { items: [item.dashboard] },
+    { label: "Finance", items: [item.timesheets, item.payrollReview, item.laborCost, item.exports, item.financeReports] },
+  ],
   [Role.AUDIT_ADMIN]: [
     { items: [item.dashboard] },
     { label: "Audit", items: [item.auditLogs] },
   ],
   [Role.CORPORATE_ADMIN]: [
     { items: [item.dashboard] },
-    { label: "Organization", items: [item.legalEntities, item.properties, item.departments] },
-    { label: "Workforce", items: [item.employees, item.staffingCompanies] },
-    { label: "Operations", items: [item.schedules, item.kiosk, item.weeklyAttendance, item.timesheets] },
-    { label: "Finance", items: [item.invoices, item.payments] },
-    { label: "Settings", items: [item.users, item.auditLogs] },
+    { label: "Administration", items: [item.properties, item.users, item.departments, item.kioskSetup, item.settings, item.auditLogs] },
   ],
   [Role.PROPERTY_MANAGER]: [
-    { items: [item.dashboard] },
-    { label: "Workforce", items: [item.employees] },
-    { label: "Operations", items: [item.schedules, item.attendance, item.kiosk, item.weeklyAttendance, item.timesheets, item.kioskSetup] },
-    { label: "Settings", items: [item.propertyAuditLogs] },
+    { items: [item.propertyDashboard] },
+    { label: "Property Operations", items: [item.todaysSchedule, item.employees, item.attendance, item.exceptions, item.coverageRequests, item.reports] },
   ],
   [Role.DEPARTMENT_MANAGER]: [
     { items: [item.dashboard] },
@@ -267,7 +268,7 @@ export function AppSidebar({ onNavigate }: { onNavigate?: () => void }) {
 
                 return (
                   <Link
-                    key={navItem.href}
+                    key={`${navItem.label}-${navItem.href}`}
                     href={navItem.href}
                     onClick={onNavigate}
                     className={cn(

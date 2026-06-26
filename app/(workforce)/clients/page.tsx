@@ -1,4 +1,8 @@
 import type { Metadata } from "next"
-import { PlatformConsoleRoute } from "@/components/platform/platform-console-route"
+import { OrganizationList } from "@/components/master-data/organization-list"
+import { PermissionGuard } from "@/components/rbac/permission-guard"
+import { Permission } from "@/src/lib/rbac/permissions"
 export const metadata: Metadata = { title: "Clients" }
-export default function Page() { return <PlatformConsoleRoute moduleKey="clients" /> }
+export default function Page() {
+  return <PermissionGuard permission={Permission.VIEW_ORGANIZATION}><OrganizationList /></PermissionGuard>
+}

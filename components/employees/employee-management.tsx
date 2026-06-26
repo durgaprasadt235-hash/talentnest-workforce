@@ -383,7 +383,8 @@ export function EmployeeManagement() {
         <div>
           <h1 className="text-3xl font-semibold tracking-tight">Employees</h1>
           <p className="mt-2 text-sm text-muted-foreground">
-            Manage employee master records, assignments, status, and kiosk PINs.
+            Manage clock-in employee records, assignments, status, and kiosk PINs.
+            Create property managers, organization admins, HR/Ops, and finance users in Users &amp; Access.
           </p>
         </div>
         {canManage && (

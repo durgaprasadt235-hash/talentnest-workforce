@@ -32,8 +32,10 @@ type EmployeeSession = {
   employeeName: string
   employeeNumber: string
   organizationId: string
+  organizationName: string
   propertyId: string
   propertyName: string
+  deviceName: string
   departmentId: string | null
   departmentName: string | null
   employmentType: string
@@ -293,7 +295,7 @@ function LoginScreen({ device, now, pin, busy, message, error, onPin, onLogin }:
     </div>
     <div className="space-y-4 rounded-2xl bg-muted/50 p-6 text-center">
       <p className="text-sm font-medium text-emerald-700">Device approved</p>
-      <h1 className="text-3xl font-semibold">{device.property?.name}</h1>
+      <div><p className="text-sm text-muted-foreground">{device.organization?.name}</p><h1 className="text-3xl font-semibold">{device.property?.name}</h1><p className="mt-1 text-sm font-medium">{device.deviceName}</p></div>
       <p className="text-xl">{now.toLocaleDateString()}<br />{now.toLocaleTimeString()}</p>
       <p className="text-sm text-muted-foreground">Enter your manager-assigned 4-digit PIN to open your kiosk session.</p>
       <StatusMessage message={message} error={error} />
@@ -315,7 +317,7 @@ function SessionDashboard({ session, now, busy, correctionOpen, correctionType, 
   return <div className="grid gap-4 lg:grid-cols-[minmax(320px,0.8fr)_minmax(440px,1.2fr)]">
     <div className="space-y-4">
       <Card><CardContent className="space-y-4 p-5">
-        <div><p className="text-sm text-muted-foreground">{session.propertyName} · {now.toLocaleTimeString()}</p><h1 className="text-2xl font-semibold">{session.employeeName}</h1><p className="text-sm text-muted-foreground">{session.departmentName ?? "No department"} · {session.employmentType}</p></div>
+        <div><p className="text-sm text-muted-foreground">{session.organizationName} · {session.propertyName} · {session.deviceName} · {now.toLocaleTimeString()}</p><h1 className="text-2xl font-semibold">{session.employeeName}</h1><p className="text-sm text-muted-foreground">{session.departmentName ?? "No department"} · {session.employmentType}</p></div>
         <p className="rounded-lg bg-muted p-3 text-sm font-medium">{clockedIn ? `Clocked in since ${formatTime(session.currentOpenAttendanceRecord?.clockInAt)}` : session.lastClockOut ? `Clocked out at ${formatTime(session.lastClockOut)}` : "Not clocked in"}</p>
         <div className="grid grid-cols-2 gap-3">
           <ActionButton disabled={busy || clockedIn} onClick={() => onPunch("clock-in")} icon={<LogIn />} label="Clock In" />

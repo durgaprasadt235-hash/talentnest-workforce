@@ -109,10 +109,11 @@ export async function createUser(input: UserInput, actor: CurrentUser) {
     firstName: normalized.firstName,
     lastName: normalized.lastName,
   })
-  const temporaryPassword = await hash(plaintextTemporaryPassword, 12)
 
   let user
   try {
+    const temporaryPassword = await hash(plaintextTemporaryPassword, 12)
+
     user = await prisma.$transaction(async (tx) => {
       return tx.user.create({
         data: {
@@ -191,7 +192,11 @@ export async function setUserStatus(id: string, status: RecordStatus, actor: Cur
 }
 
 function userScope(actor: CurrentUser): Prisma.UserWhereInput | undefined {
-  if (actor.role === Role.PLATFORM_OWNER || actor.role === Role.PLATFORM_ADMIN) return undefined
+  if (
+    actor.role === Role.PLATFORM_OWNER ||
+    actor.role === Role.PLATFORM_SUPER_ADMIN ||
+    actor.role === Role.PLATFORM_ADMIN
+  ) return undefined
   if (actor.organizationId) {
     return {
       organizationId: actor.organizationId,
@@ -211,29 +216,27 @@ function manageableRoles(actor: CurrentUser): RoleType[] {
   switch (actor.role) {
     case Role.PLATFORM_OWNER:
       return [...ROLES]
+    case Role.PLATFORM_SUPER_ADMIN:
+      return ROLES.filter((role) => role !== Role.PLATFORM_OWNER)
     case Role.PLATFORM_ADMIN:
       return ROLES.filter((role) => !platformRoles.includes(role))
     case Role.PLATFORM_OPERATIONS:
       return [Role.ORGANIZATION_OWNER]
     case Role.ORGANIZATION_OWNER:
-      return ROLES.filter((role) => !platformRoles.includes(role))
+      return [
+        Role.CORPORATE_ADMIN,
+        Role.HR_OPERATIONS_ADMIN,
+        Role.FINANCE_ADMIN,
+        Role.PROPERTY_MANAGER,
+      ]
     case Role.HR_OPERATIONS_ADMIN:
+      return []
+    case Role.CORPORATE_ADMIN:
       return [
         Role.HR_OPERATIONS_ADMIN,
         Role.FINANCE_ADMIN,
-        Role.AUDIT_ADMIN,
-        Role.REGIONAL_MANAGER,
         Role.PROPERTY_MANAGER,
-        Role.EMPLOYEE,
-        Role.FRONT_DESK,
-        Role.HOUSEKEEPING,
-        Role.MAINTENANCE,
-        Role.NIGHT_AUDITOR,
       ]
-    case Role.CORPORATE_ADMIN:
-      return ROLES.filter(
-        (role) => !platformRoles.includes(role) && role !== Role.ORGANIZATION_OWNER,
-      )
     default:
       return []
   }
@@ -241,6 +244,7 @@ function manageableRoles(actor: CurrentUser): RoleType[] {
 
 function canManageUser(actor: CurrentUser, target: { role: string; organizationId: string | null }) {
   if (actor.role === Role.PLATFORM_OWNER) return true
+  if (actor.role === Role.PLATFORM_SUPER_ADMIN) return target.role !== Role.PLATFORM_OWNER
   if (actor.role === Role.PLATFORM_ADMIN) return !platformRoles.includes(target.role as RoleType)
   if (actor.role === Role.PLATFORM_OPERATIONS) return target.role === Role.ORGANIZATION_OWNER
   if (!actor.organizationId || actor.organizationId !== target.organizationId) return false

@@ -1,5 +1,6 @@
 "use client"
 
+import Link from "next/link"
 import { useState } from "react"
 import { Show, SignInButton, SignUpButton, SignOutButton, UserButton } from "@clerk/nextjs"
 import { Bell, HelpCircle, LogOut, Menu, Plus, Search, ShieldCheck } from "lucide-react"
@@ -54,9 +55,11 @@ export function AppHeader() {
             className="h-9 w-full rounded-lg border bg-background pl-9 pr-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
           />
         </label>
-        <Button variant="outline" size="sm" className="hidden md:inline-flex">
-          <Plus className="size-4" />
-          Create
+        <Button asChild variant="outline" size="sm" className="hidden md:inline-flex">
+          <Link href="/users?create=1">
+            <Plus className="size-4" />
+            Create User
+          </Link>
         </Button>
         <Button variant="ghost" size="icon-sm" aria-label="Notifications">
           <Bell className="size-4" />

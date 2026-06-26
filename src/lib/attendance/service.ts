@@ -317,7 +317,8 @@ async function getKioskContext(input: ClockRequest) {
     !device.organizationId ||
     !device.propertyId ||
     !device.deviceCode ||
-    !device.property
+    !device.property ||
+    device.property.organizationId !== device.organizationId
   ) {
     await audit("CLOCK_ATTEMPT_BLOCKED", "AttendanceDevice", device?.id, device?.organizationId ?? undefined, device?.propertyId ?? undefined, {
       reason: AttendanceExceptionType.DEVICE_NOT_REGISTERED,
@@ -361,7 +362,8 @@ export async function verifyKioskEmployee(input: KioskEmployeeVerification) {
     device.status !== AttendanceDeviceStatus.ACTIVE ||
     !device.organizationId ||
     !device.propertyId ||
-    !device.property
+    !device.property ||
+    device.property.organizationId !== device.organizationId
   ) {
     throw new Error("This device is not registered or active.")
   }
@@ -391,12 +393,8 @@ export async function verifyKioskEmployee(input: KioskEmployeeVerification) {
       where: {
         employeeId: employee.id,
         propertyId: device.propertyId,
-        status: {
-          in: [
-            AttendanceRecordStatus.OPEN,
-            AttendanceRecordStatus.PENDING_MANAGER_APPROVAL,
-          ],
-        },
+        status: AttendanceRecordStatus.OPEN,
+        clockOutAt: null,
       },
       select: { id: true, clockInAt: true, status: true },
       orderBy: { clockInAt: "desc" },
@@ -423,14 +421,16 @@ export async function verifyKioskEmployee(input: KioskEmployeeVerification) {
 export async function createKioskSession(input: KioskSessionInput) {
   const device = await prisma.attendanceDevice.findUnique({
     where: { fingerprintHash: fingerprintHash(input.fingerprint) },
-    include: { property: true },
+    include: { organization: true, property: true },
   })
   if (
     !device ||
     device.status !== AttendanceDeviceStatus.ACTIVE ||
     !device.organizationId ||
     !device.propertyId ||
-    !device.property
+    !device.organization ||
+    !device.property ||
+    device.property.organizationId !== device.organizationId
   ) {
     throw new Error("This device is not registered or active.")
   }
@@ -439,6 +439,7 @@ export async function createKioskSession(input: KioskSessionInput) {
     ...device,
     organizationId: device.organizationId,
     propertyId: device.propertyId,
+    organization: device.organization,
     property: device.property,
   }
   const employee = await validateKioskEmployee(activeDevice, input)
@@ -450,7 +451,13 @@ export async function createKioskSession(input: KioskSessionInput) {
 }
 
 async function buildKioskSessionPayload(
-  device: { organizationId: string; propertyId: string; property: { name: string } },
+  device: {
+    organizationId: string
+    propertyId: string
+    deviceName: string
+    organization: { name: string }
+    property: { name: string }
+  },
   employee: {
     id: string
     organizationId: string
@@ -508,8 +515,7 @@ async function buildKioskSessionPayload(
     }, 0) * 100) / 100
   const todayRecords = records.filter((record) => record.clockInAt && record.clockInAt >= startOfDay)
   const openRecord = records.find((record) =>
-    record.status === AttendanceRecordStatus.OPEN ||
-    (record.status === AttendanceRecordStatus.PENDING_MANAGER_APPROVAL && !record.clockOutAt),
+    record.status === AttendanceRecordStatus.OPEN && !record.clockOutAt,
   ) ?? null
   const lastClockIn = records.find((record) => record.clockInAt)?.clockInAt ?? null
   const lastClockOut = records.find((record) => record.clockOutAt)?.clockOutAt ?? null
@@ -522,8 +528,10 @@ async function buildKioskSessionPayload(
     employeeName: `${employee.firstName} ${employee.lastName}`,
     employeeNumber: employee.employeeNumber,
     organizationId: employee.organizationId,
+    organizationName: device.organization.name,
     propertyId: device.propertyId,
     propertyName: device.property.name,
+    deviceName: device.deviceName,
     departmentId: employee.departmentId,
     departmentName: department?.name ?? null,
     employmentType: employee.employmentType,
@@ -631,7 +639,6 @@ async function validateKioskEmployee(
   const employees = await prisma.employee.findMany({
     where: {
       organizationId: device.organizationId,
-      propertyId: device.propertyId,
       status: EmployeeStatus.ACTIVE,
       clockPinHash: { not: null },
     },
@@ -653,10 +660,31 @@ async function validateKioskEmployee(
     throw new Error("Invalid PIN for this property.")
   }
   if (matches.length > 1) {
+    const now = new Date()
+    const scheduledMatches = await prisma.employee.findMany({
+      where: {
+        id: { in: matches.map((employee) => employee.id) },
+        shifts: {
+          some: {
+            propertyId: device.propertyId,
+            startTime: { lte: now },
+            endTime: { gte: now },
+            status: { in: [ShiftStatus.PUBLISHED, ShiftStatus.ACCEPTED] },
+          },
+        },
+      },
+    })
+    if (scheduledMatches.length === 1) return scheduledMatches[0]
+
+    const assignedPropertyMatches = matches.filter(
+      (employee) => employee.propertyId === device.propertyId,
+    )
+    if (assignedPropertyMatches.length === 1) return assignedPropertyMatches[0]
+
     await audit("CLOCK_ATTEMPT_BLOCKED", "AttendanceDevice", undefined, device.organizationId, device.propertyId, {
       reason: "PIN_CONFLICT",
     })
-    throw new Error("Duplicate active PINs found. Contact manager.")
+    throw new Error("This PIN matches multiple active employees in the organization. Contact a manager.")
   }
   return matches[0]
 }
@@ -684,12 +712,8 @@ export async function clockIn(input: ClockRequest) {
   const existingOpenRecord = await prisma.attendanceRecord.findFirst({
     where: {
       employeeId: employee.id,
-      status: {
-        in: [
-          AttendanceRecordStatus.OPEN,
-          AttendanceRecordStatus.PENDING_MANAGER_APPROVAL,
-        ],
-      },
+      status: AttendanceRecordStatus.OPEN,
+      clockOutAt: null,
     },
   })
 
@@ -700,6 +724,7 @@ export async function clockIn(input: ClockRequest) {
   const shift = await prisma.shift.findFirst({
     where: {
       employeeId: employee.id,
+      organizationId: device.organizationId,
       propertyId: device.propertyId,
       startTime: { lte: now },
       endTime: { gte: now },
@@ -716,27 +741,13 @@ export async function clockIn(input: ClockRequest) {
       ? calculateDistanceMeters(input.location, geofence)
       : undefined
 
-  let exceptionType: AttendanceExceptionType | undefined
-  let reason: string | undefined
-
-  if (employee.propertyId && employee.propertyId !== device.propertyId) {
-    exceptionType = AttendanceExceptionType.WRONG_PROPERTY
-    reason = "Employee attempted to clock in at a different property."
-  } else if (geofence && (!input.location || distance! > geofence.radiusMeters)) {
-    exceptionType = AttendanceExceptionType.OUTSIDE_GEOFENCE
-    reason = "Clock-in location is outside the approved property geofence."
-  } else if (!shift) {
-    exceptionType = AttendanceExceptionType.UNSCHEDULED_CLOCK_IN
-    reason = "No active scheduled shift was found."
-  } else if (
-    now.getTime() >
-    shift.startTime.getTime() + LATE_GRACE_MINUTES * 60 * 1000
-  ) {
-    exceptionType = AttendanceExceptionType.LATE_CLOCK_IN
-    reason = "Clock-in occurred after the five-minute grace period."
-  }
-
-  const pending = Boolean(exceptionType)
+  const requiresManagerReview = !shift
+  const exceptionType = requiresManagerReview
+    ? AttendanceExceptionType.UNSCHEDULED_PROPERTY_CLOCK_IN
+    : undefined
+  const reason = requiresManagerReview
+    ? "No active scheduled shift was found for this employee at the kiosk property."
+    : undefined
   const record = await prisma.attendanceRecord.create({
     data: {
       organizationId: device.organizationId,
@@ -750,11 +761,9 @@ export async function clockIn(input: ClockRequest) {
       clockInLatitude: input.location?.latitude,
       clockInLongitude: input.location?.longitude,
       clockInDistanceMeters: distance,
-      status: pending
-        ? AttendanceRecordStatus.PENDING_MANAGER_APPROVAL
-        : AttendanceRecordStatus.OPEN,
+      status: AttendanceRecordStatus.OPEN,
       exceptionType,
-      managerApprovalStatus: pending
+      managerApprovalStatus: requiresManagerReview
         ? ManagerApprovalStatus.PENDING
         : ManagerApprovalStatus.NOT_REQUIRED,
     },
@@ -774,21 +783,7 @@ export async function clockIn(input: ClockRequest) {
     })
   }
 
-  if (exceptionType === AttendanceExceptionType.LATE_CLOCK_IN) {
-    await prisma.attendanceAlert.create({
-      data: {
-        organizationId: record.organizationId,
-        propertyId: record.propertyId,
-        employeeId: record.employeeId,
-        attendanceRecordId: record.id,
-        alertType: AttendanceAlertType.LATE_CLOCK_IN_BLOCKED,
-        recipientRole: "PROPERTY_MANAGER",
-        message: "Late clock-in requires manager approval.",
-      },
-    })
-  }
-
-  if (exceptionType === AttendanceExceptionType.UNSCHEDULED_CLOCK_IN) {
+  if (exceptionType === AttendanceExceptionType.UNSCHEDULED_PROPERTY_CLOCK_IN) {
     await audit(
       "UNSCHEDULED_CLOCK_IN_RECORDED",
       "AttendanceRecord",
@@ -807,17 +802,15 @@ export async function clockIn(input: ClockRequest) {
     employeeId: record.employeeId,
     departmentId: record.departmentId,
     exceptionType: exceptionType ?? AttendanceExceptionType.NONE,
-    pendingManagerApproval: pending,
+    pendingManagerApproval: requiresManagerReview,
   })
 
   return {
     record,
     message:
-      exceptionType === AttendanceExceptionType.UNSCHEDULED_CLOCK_IN
-        ? "No scheduled shift found. Your clock-in has been recorded and flagged for manager review."
-        : pending
-          ? "Clock-in request submitted for manager approval."
-          : "Clock-in successful.",
+      requiresManagerReview
+        ? "No scheduled shift was found at this property. Clock-in is active and will be flagged for manager review after clock-out."
+        : "Clock-in successful.",
   }
 }
 
@@ -827,12 +820,10 @@ export async function clockOut(input: ClockRequest) {
   const record = await prisma.attendanceRecord.findFirst({
     where: {
       employeeId: employee.id,
-      status: {
-        in: [
-          AttendanceRecordStatus.OPEN,
-          AttendanceRecordStatus.PENDING_MANAGER_APPROVAL,
-        ],
-      },
+      organizationId: device.organizationId,
+      propertyId: device.propertyId,
+      status: AttendanceRecordStatus.OPEN,
+      clockOutAt: null,
     },
     orderBy: { clockInAt: "desc" },
   })
@@ -859,8 +850,8 @@ export async function clockOut(input: ClockRequest) {
       clockOutDistanceMeters: distance,
       status:
         record.managerApprovalStatus === ManagerApprovalStatus.PENDING
-          ? AttendanceRecordStatus.PENDING_MANAGER_APPROVAL
-          : AttendanceRecordStatus.CLOCKED_OUT,
+          ? AttendanceRecordStatus.FLAGGED_FOR_MANAGER_REVIEW
+          : AttendanceRecordStatus.COMPLETED,
     },
   })
 
@@ -1066,27 +1057,38 @@ export async function getAttendanceAdminData() {
 }
 
 export async function resolveException(input: ExceptionActionRequest) {
-  const exception = await prisma.attendanceException.update({
+  const existingException = await prisma.attendanceException.findUnique({
     where: { id: input.exceptionId },
-    data: {
-      status: input.status,
-      approvedByUserId: input.userId,
-      approvedAt: new Date(),
+    include: {
+      attendanceRecord: { select: { id: true, clockOutAt: true, status: true } },
     },
   })
 
-  if (exception.attendanceRecordId) {
-    const attendanceRecord = await prisma.attendanceRecord.findUnique({
-      where: { id: exception.attendanceRecordId },
-      select: { clockOutAt: true },
+  if (!existingException) throw new Error("Attendance exception not found.")
+  if (
+    !existingException.attendanceRecord ||
+    existingException.attendanceRecord.status !== AttendanceRecordStatus.FLAGGED_FOR_MANAGER_REVIEW
+  ) {
+    throw new Error("Only flagged attendance records can be approved or rejected.")
+  }
+
+  const exception = await prisma.$transaction(async (tx) => {
+    const updatedException = await tx.attendanceException.update({
+      where: { id: existingException.id },
+      data: {
+        status: input.status,
+        approvedByUserId: input.userId,
+        approvedAt: new Date(),
+      },
     })
-    await prisma.attendanceRecord.update({
-      where: { id: exception.attendanceRecordId },
+
+    await tx.attendanceRecord.update({
+      where: { id: existingException.attendanceRecord!.id },
       data: {
         status:
           input.status === AttendanceExceptionStatus.APPROVED
-            ? attendanceRecord?.clockOutAt
-              ? AttendanceRecordStatus.CLOCKED_OUT
+            ? existingException.attendanceRecord!.clockOutAt
+              ? AttendanceRecordStatus.COMPLETED
               : AttendanceRecordStatus.OPEN
             : AttendanceRecordStatus.REJECTED,
         managerApprovalStatus:
@@ -1096,7 +1098,9 @@ export async function resolveException(input: ExceptionActionRequest) {
         notes: input.note,
       },
     })
-  }
+
+    return updatedException
+  })
 
   await audit(
     `ATTENDANCE_EXCEPTION_${input.status}`,
@@ -1107,7 +1111,10 @@ export async function resolveException(input: ExceptionActionRequest) {
     { note: input.note },
   )
 
-  if (exception.exceptionType === AttendanceExceptionType.UNSCHEDULED_CLOCK_IN) {
+  if (
+    exception.exceptionType === AttendanceExceptionType.UNSCHEDULED_CLOCK_IN ||
+    exception.exceptionType === AttendanceExceptionType.UNSCHEDULED_PROPERTY_CLOCK_IN
+  ) {
     await audit(
       input.status === AttendanceExceptionStatus.APPROVED
         ? "UNSCHEDULED_CLOCK_IN_APPROVED"
@@ -1155,9 +1162,11 @@ export async function resolveAttendanceCorrection(input: CorrectionActionRequest
           clockOutAt,
           status:
             record.managerApprovalStatus === ManagerApprovalStatus.PENDING
-              ? AttendanceRecordStatus.PENDING_MANAGER_APPROVAL
+              ? clockOutAt
+                ? AttendanceRecordStatus.FLAGGED_FOR_MANAGER_REVIEW
+                : AttendanceRecordStatus.OPEN
               : clockOutAt
-                ? AttendanceRecordStatus.CLOCKED_OUT
+                ? AttendanceRecordStatus.COMPLETED
                 : clockInAt
                   ? AttendanceRecordStatus.OPEN
                   : record.status,

@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react"
+import { useSearchParams } from "next/navigation"
 import { KeyRound, MailPlus, Pencil, Plus, RotateCcw, UserMinus, XCircle } from "lucide-react"
 
 import { useCurrentUser } from "@/components/rbac/current-user-provider"
@@ -137,16 +138,29 @@ const propertyEmployeeRoles: RoleType[] = [
 const staffingUserRoles: RoleType[] = [
   Role.STAFFING_OWNER, Role.RECRUITER, Role.ACCOUNT_MANAGER, Role.STAFFING_ADMIN, Role.STAFFING_BILLING,
 ]
+const commonRolePresets: RoleType[] = [
+  Role.PLATFORM_ADMIN,
+  Role.ORGANIZATION_OWNER,
+  Role.CORPORATE_ADMIN,
+  Role.HR_OPERATIONS_ADMIN,
+  Role.FINANCE_ADMIN,
+  Role.PROPERTY_MANAGER,
+]
 
 export function UserAccessManagement({
   initialOrganizationId,
   initialRole,
+  initialCreate = false,
 }: {
   initialOrganizationId?: string
   initialRole?: string
+  initialCreate?: boolean
 }) {
   const { currentUser } = useCurrentUser()
+  const searchParams = useSearchParams()
+  const shouldOpenCreate = initialCreate || searchParams.get("create") === "1"
   const handledAssignment = useRef(false)
+  const handledCreate = useRef(false)
   const canCreate = hasPermission(currentUser, Permission.MANAGE_USERS)
   const [data, setData] = useState<UserData>(emptyData)
   const [invitations, setInvitations] = useState<InvitationRow[]>([])
@@ -212,6 +226,19 @@ export function UserAccessManagement({
     setOpen(true)
   }, [data.options.roles, initialOrganizationId, initialRole])
 
+  useEffect(() => {
+    if (!shouldOpenCreate || handledCreate.current || !canCreate || !data.options.roles.length) return
+    handledCreate.current = true
+    setEditingId(null)
+    setForm({
+      ...emptyForm,
+      role: data.options.roles.includes(Role.PLATFORM_ADMIN)
+        ? Role.PLATFORM_ADMIN
+        : data.options.roles[0],
+    })
+    setOpen(true)
+  }, [canCreate, data.options.roles, shouldOpenCreate])
+
   const properties = data.options.properties.filter(
     (property) => property.organizationId === form.organizationId,
   )
@@ -223,13 +250,11 @@ export function UserAccessManagement({
       department.organizationId === form.organizationId &&
       (!form.propertyIds.length || form.propertyIds.includes(department.propertyId)),
   )
-  const isPlatformRole =
-    form.role === Role.PLATFORM_OWNER || form.role === Role.PLATFORM_ADMIN
+  const isPlatformRole = platformRoles.includes(form.role)
   const hasPropertyAssignment = propertyAssignmentRoles.includes(form.role)
-  const isStaffingRole =
-    form.role === Role.STAFFING_ADMIN || form.role === Role.STAFFING_BILLING
+  const isStaffingRole = staffingUserRoles.includes(form.role)
   const isPlatformViewer =
-    currentUser.role === Role.PLATFORM_OWNER || currentUser.role === Role.PLATFORM_ADMIN
+    platformRoles.includes(currentUser.role)
   const platformUsers = data.users.filter((user) => platformRoles.includes(user.role))
   const clientUsers = data.users.filter((user) => !platformRoles.includes(user.role))
   const clientManagementUsers = clientUsers.filter(
@@ -240,7 +265,12 @@ export function UserAccessManagement({
 
   function startCreate() {
     setEditingId(null)
-    setForm({ ...emptyForm, role: data.options.roles[0] ?? Role.EMPLOYEE })
+    setForm({
+      ...emptyForm,
+      role: data.options.roles.includes(Role.PLATFORM_ADMIN)
+        ? Role.PLATFORM_ADMIN
+        : data.options.roles[0] ?? Role.EMPLOYEE,
+    })
     setError("")
     setOpen(true)
   }
@@ -293,7 +323,7 @@ export function UserAccessManagement({
       ...current,
       role,
       organizationId:
-        role === Role.PLATFORM_OWNER || role === Role.PLATFORM_ADMIN
+        platformRoles.includes(role)
           ? ""
           : current.organizationId,
       propertyIds: propertyAssignmentRoles.includes(role) ? current.propertyIds : [],
@@ -410,7 +440,7 @@ export function UserAccessManagement({
           </p>
         </div>
         {canCreate && (
-          <Button onClick={startCreate}>
+          <Button aria-label="Add user" onClick={startCreate}>
             <Plus className="size-4" />
             Add user
           </Button>
@@ -523,6 +553,19 @@ export function UserAccessManagement({
             <Field label="Email"><Input required type="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} /></Field>
             {!editingId && <Field label="Temporary Password"><Input required minLength={8} type="password" value={form.temporaryPassword} onChange={(event) => setForm({ ...form, temporaryPassword: event.target.value })} /></Field>}
             <Field label="Role">
+              <div className="mb-2 flex flex-wrap gap-2">
+                {commonRolePresets.filter((role) => data.options.roles.includes(role)).map((role) => (
+                  <Button
+                    key={role}
+                    type="button"
+                    size="sm"
+                    variant={form.role === role ? "default" : "outline"}
+                    onClick={() => updateRole(role)}
+                  >
+                    {ROLE_LABELS[role]}
+                  </Button>
+                ))}
+              </div>
               <select className={selectClass} value={form.role} onChange={(event) => updateRole(event.target.value as RoleType)}>
                 {data.options.roles.map((role) => <option key={role} value={role}>{ROLE_LABELS[role]}</option>)}
               </select>
