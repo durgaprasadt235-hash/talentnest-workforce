@@ -481,6 +481,8 @@ async function buildKioskSessionPayload(
   startOfWeek.setDate(startOfWeek.getDate() - (day === 0 ? 6 : day - 1))
   const endOfWeek = new Date(startOfWeek)
   endOfWeek.setDate(endOfWeek.getDate() + 7)
+  const tenDaysAgo = new Date(startOfDay)
+  tenDaysAgo.setDate(tenDaysAgo.getDate() - 9)
 
   const [department, currentShift, previousShift, nextShift, records] = await Promise.all([
     employee.departmentId
@@ -502,7 +504,7 @@ async function buildKioskSessionPayload(
       orderBy: { startTime: "asc" },
     }),
     prisma.attendanceRecord.findMany({
-      where: { employeeId: employee.id, propertyId: device.propertyId, clockInAt: { gte: startOfWeek, lt: endOfWeek } },
+      where: { employeeId: employee.id, propertyId: device.propertyId, clockInAt: { gte: tenDaysAgo, lt: endOfDay } },
       select: { id: true, clockInAt: true, clockOutAt: true, status: true },
       orderBy: { clockInAt: "desc" },
     }),
@@ -514,6 +516,7 @@ async function buildKioskSessionPayload(
       return total + Math.max(0, end.getTime() - record.clockInAt.getTime()) / HOUR_MS
     }, 0) * 100) / 100
   const todayRecords = records.filter((record) => record.clockInAt && record.clockInAt >= startOfDay)
+  const weekRecords = records.filter((record) => record.clockInAt && record.clockInAt >= startOfWeek && record.clockInAt < endOfWeek)
   const openRecord = records.find((record) =>
     record.status === AttendanceRecordStatus.OPEN && !record.clockOutAt,
   ) ?? null
@@ -539,7 +542,7 @@ async function buildKioskSessionPayload(
     position: employee.position,
     currentOpenAttendanceRecord: openRecord,
     todayWorkedHours: workedHours(todayRecords),
-    weekWorkedHours: workedHours(records),
+    weekWorkedHours: workedHours(weekRecords),
     remainingScheduledHours: Math.max(0, Math.round((scheduledHours - workedHours(todayRecords)) * 100) / 100),
     currentShift,
     previousShift: previousShift
@@ -549,6 +552,7 @@ async function buildKioskSessionPayload(
     lastClockIn,
     lastClockOut,
     todayPunches: todayRecords,
+    recentPunches: records,
   }
 }
 
@@ -608,14 +612,13 @@ export async function createAttendanceCorrectionRequest(
       requestedBySource: "KIOSK",
       requestedDate: new Date(`${input.requestedDate}T00:00:00`),
       requestedTime: input.requestedTime,
-      notes: input.notes,
       requestedClockInAt: input.requestedClockInAt
         ? new Date(input.requestedClockInAt)
         : undefined,
       requestedClockOutAt: input.requestedClockOutAt
         ? new Date(input.requestedClockOutAt)
         : undefined,
-      reason: input.notes?.trim() || input.correctionType.replaceAll("_", " "),
+      reason: input.correctionType.replaceAll("_", " "),
     },
   })
 

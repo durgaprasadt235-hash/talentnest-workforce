@@ -53,12 +53,17 @@ export const attendanceCorrectionRequestSchema = z.object({
   propertyId: trimmedString.max(100),
   pin: z.string().regex(/^\d{4}$/),
   attendanceRecordId: trimmedString.max(100).optional(),
-  correctionType: trimmedString.max(100),
+  correctionType: z.enum([
+    "MISSED_CLOCK_IN",
+    "MISSED_CLOCK_OUT",
+    "WRONG_CLOCK_IN_TIME",
+    "WRONG_CLOCK_OUT_TIME",
+    "DUPLICATE_PUNCH",
+  ]),
   requestedDate: z.iso.date(),
   requestedTime: z.string().regex(/^\d{2}:\d{2}$/).optional(),
   requestedClockInAt: z.iso.datetime().optional(),
   requestedClockOutAt: z.iso.datetime().optional(),
-  notes: z.string().trim().max(2_000).optional(),
 })
 
 export const exceptionActionRequestSchema = z.object({

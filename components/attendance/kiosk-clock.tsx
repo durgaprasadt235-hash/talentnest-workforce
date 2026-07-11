@@ -17,15 +17,6 @@ type DeviceInfo = {
   organization: { name: string } | null
   property: { name: string } | null
 }
-type ShiftInfo = {
-  position: string
-  startTime: string
-  endTime: string
-  status: string
-  department: { name: string } | null
-  departmentRole: { name: string } | null
-  actualWorkedHours?: number
-}
 type PunchInfo = { id: string; clockInAt: string | null; clockOutAt: string | null; status: string }
 type EmployeeSession = {
   employeeId: string
@@ -44,16 +35,14 @@ type EmployeeSession = {
   todayWorkedHours: number
   weekWorkedHours: number
   remainingScheduledHours: number
-  currentShift: ShiftInfo | null
-  previousShift: ShiftInfo | null
-  nextShift: ShiftInfo | null
   lastClockIn: string | null
   lastClockOut: string | null
   todayPunches: PunchInfo[]
+  recentPunches: PunchInfo[]
 }
 
 const INSTALLATION_ID_KEY = "talentnest-kiosk-installation-id"
-const IDLE_TIMEOUT_MS = 60_000
+const IDLE_TIMEOUT_MS = 5_000
 
 function getBrowserFingerprint(): Fingerprint {
   let installationId = localStorage.getItem(INSTALLATION_ID_KEY)
@@ -86,7 +75,6 @@ export function KioskClock() {
   const [correctionType, setCorrectionType] = useState("MISSED_CLOCK_IN")
   const [requestedDate, setRequestedDate] = useState(new Date().toISOString().slice(0, 10))
   const [requestedTime, setRequestedTime] = useState("")
-  const [notes, setNotes] = useState("")
   const [now, setNow] = useState(new Date())
   const [message, setMessage] = useState("")
   const [error, setError] = useState(false)
@@ -117,10 +105,19 @@ export function KioskClock() {
   }, [])
 
   useEffect(() => {
-    if (!session) return
-    const timeout = window.setTimeout(clearSession, IDLE_TIMEOUT_MS)
-    return () => window.clearTimeout(timeout)
-  }, [session, correctionOpen, notes, requestedDate, requestedTime])
+    if (!session || busy) return
+    let timeout = window.setTimeout(clearSession, IDLE_TIMEOUT_MS)
+    const restart = () => {
+      window.clearTimeout(timeout)
+      timeout = window.setTimeout(clearSession, IDLE_TIMEOUT_MS)
+    }
+    const events: Array<keyof WindowEventMap> = ["pointerdown", "keydown", "touchstart"]
+    events.forEach((event) => window.addEventListener(event, restart))
+    return () => {
+      window.clearTimeout(timeout)
+      events.forEach((event) => window.removeEventListener(event, restart))
+    }
+  }, [session, busy])
 
   function showError(caught: unknown) {
     setError(true)
@@ -236,13 +233,11 @@ export function KioskClock() {
           correctionType,
           requestedDate,
           requestedTime: requestedTime || undefined,
-          notes: notes || undefined,
         }),
       })
       const data = await response.json()
       if (!response.ok) throw new Error(data.error)
       setCorrectionOpen(false)
-      setNotes("")
       setRequestedTime("")
       setError(false)
       setMessage("Correction request submitted to manager.")
@@ -277,7 +272,7 @@ export function KioskClock() {
       <video ref={videoRef} autoPlay playsInline muted className="fixed size-px opacity-0" />
       <div className="mx-auto max-w-7xl">
         {session ? (
-          <SessionDashboard session={session} now={now} busy={busy} correctionOpen={correctionOpen} correctionType={correctionType} requestedDate={requestedDate} requestedTime={requestedTime} notes={notes} message={message} error={error} onPunch={punch} onCorrectionOpen={setCorrectionOpen} onCorrectionType={setCorrectionType} onRequestedDate={setRequestedDate} onRequestedTime={setRequestedTime} onNotes={setNotes} onRequestCorrection={requestCorrection} onEndSession={endSession} />
+          <SessionDashboard session={session} now={now} busy={busy} correctionOpen={correctionOpen} correctionType={correctionType} requestedDate={requestedDate} requestedTime={requestedTime} message={message} error={error} onPunch={punch} onCorrectionOpen={setCorrectionOpen} onCorrectionType={setCorrectionType} onRequestedDate={setRequestedDate} onRequestedTime={setRequestedTime} onRequestCorrection={requestCorrection} onEndSession={endSession} />
         ) : (
           <LoginScreen device={device} now={now} pin={pin} busy={busy} message={message} error={error} onPin={(value) => setPin(value.replace(/\D/g, "").slice(0, 4))} onLogin={login} />
         )}
@@ -312,7 +307,7 @@ function NumericKeypad({ pin, disabled, onPin }: { pin: string; disabled: boolea
   </div>
 }
 
-function SessionDashboard({ session, now, busy, correctionOpen, correctionType, requestedDate, requestedTime, notes, message, error, onPunch, onCorrectionOpen, onCorrectionType, onRequestedDate, onRequestedTime, onNotes, onRequestCorrection, onEndSession }: { session: EmployeeSession; now: Date; busy: boolean; correctionOpen: boolean; correctionType: string; requestedDate: string; requestedTime: string; notes: string; message: string; error: boolean; onPunch: (action: "clock-in" | "clock-out") => void; onCorrectionOpen: (open: boolean) => void; onCorrectionType: (value: string) => void; onRequestedDate: (value: string) => void; onRequestedTime: (value: string) => void; onNotes: (value: string) => void; onRequestCorrection: () => void; onEndSession: () => void }) {
+function SessionDashboard({ session, now, busy, correctionOpen, correctionType, requestedDate, requestedTime, message, error, onPunch, onCorrectionOpen, onCorrectionType, onRequestedDate, onRequestedTime, onRequestCorrection, onEndSession }: { session: EmployeeSession; now: Date; busy: boolean; correctionOpen: boolean; correctionType: string; requestedDate: string; requestedTime: string; message: string; error: boolean; onPunch: (action: "clock-in" | "clock-out") => void; onCorrectionOpen: (open: boolean) => void; onCorrectionType: (value: string) => void; onRequestedDate: (value: string) => void; onRequestedTime: (value: string) => void; onRequestCorrection: () => void; onEndSession: () => void }) {
   const clockedIn = Boolean(session.currentOpenAttendanceRecord)
   return <div className="grid gap-4 lg:grid-cols-[minmax(320px,0.8fr)_minmax(440px,1.2fr)]">
     <div className="space-y-4">
@@ -327,14 +322,12 @@ function SessionDashboard({ session, now, busy, correctionOpen, correctionType, 
         </div>
         <StatusMessage message={message} error={error} />
       </CardContent></Card>
-      {correctionOpen && <CorrectionForm correctionType={correctionType} requestedDate={requestedDate} requestedTime={requestedTime} notes={notes} busy={busy} onCorrectionType={onCorrectionType} onRequestedDate={onRequestedDate} onRequestedTime={onRequestedTime} onNotes={onNotes} onSubmit={onRequestCorrection} />}
+      {correctionOpen && <CorrectionForm correctionType={correctionType} requestedDate={requestedDate} requestedTime={requestedTime} busy={busy} onCorrectionType={onCorrectionType} onRequestedDate={onRequestedDate} onRequestedTime={onRequestedTime} onSubmit={onRequestCorrection} />}
     </div>
     <div className="grid content-start gap-4 sm:grid-cols-2">
-      <SummaryCard title="Present shift"><ShiftDetails shift={session.currentShift} empty="No shift scheduled" /></SummaryCard>
-      <SummaryCard title="Previous shift"><ShiftDetails shift={session.previousShift} empty="No previous shift" /></SummaryCard>
-      <SummaryCard title="Next shift"><ShiftDetails shift={session.nextShift} empty="No upcoming shift" /></SummaryCard>
-      <SummaryCard title="Worked hours"><Metric label="Today" value={`${session.todayWorkedHours} hrs`} /><Metric label="This week" value={`${session.weekWorkedHours} hrs`} /><Metric label="Remaining scheduled" value={`${session.remainingScheduledHours} hrs`} /></SummaryCard>
-      <SummaryCard title="Timesheet summary"><Metric label="Today punches" value={String(session.todayPunches.length)} /><Metric label="Current open punch" value={clockedIn ? formatTime(session.currentOpenAttendanceRecord?.clockInAt) : "None"} /><Metric label="Last clock in" value={formatTime(session.lastClockIn)} /><Metric label="Last clock out" value={formatTime(session.lastClockOut)} /></SummaryCard>
+      <SummaryCard title="My last 10 days">
+        {session.recentPunches.length === 0 ? <p className="text-sm text-muted-foreground">No clock records in the last 10 days.</p> : session.recentPunches.map((punch) => <div key={punch.id} className="grid grid-cols-3 gap-2 border-b py-2 text-sm last:border-0"><span>{punch.clockInAt ? new Date(punch.clockInAt).toLocaleDateString([], { month: "short", day: "numeric" }) : "--"}</span><span>In {formatTime(punch.clockInAt)}</span><span>Out {formatTime(punch.clockOutAt)}</span></div>)}
+      </SummaryCard>
     </div>
   </div>
 }
@@ -345,16 +338,8 @@ function ActionButton({ disabled, onClick, icon, label }: { disabled: boolean; o
 function SummaryCard({ title, children }: { title: string; children: React.ReactNode }) {
   return <Card><CardContent className="space-y-2 p-5"><h2 className="font-semibold">{title}</h2>{children}</CardContent></Card>
 }
-function Metric({ label, value }: { label: string; value: string }) {
-  return <p className="flex justify-between gap-4 text-sm"><span className="text-muted-foreground">{label}</span><span className="font-medium">{value}</span></p>
-}
-function ShiftDetails({ shift, empty }: { shift: ShiftInfo | null; empty: string }) {
-  if (!shift) return <p className="text-sm text-muted-foreground">{empty}</p>
-  return <><Metric label="Start" value={formatDateTime(shift.startTime)} /><Metric label="End" value={formatDateTime(shift.endTime)} /><Metric label="Department" value={shift.department?.name ?? "Not assigned"} /><Metric label="Role" value={shift.departmentRole?.name ?? shift.position} /><Metric label="Status" value={shiftContextStatus(shift)} />{shift.actualWorkedHours !== undefined && <Metric label="Actual worked" value={`${shift.actualWorkedHours} hrs`} />}</>
-}
-
-function CorrectionForm({ correctionType, requestedDate, requestedTime, notes, busy, onCorrectionType, onRequestedDate, onRequestedTime, onNotes, onSubmit }: { correctionType: string; requestedDate: string; requestedTime: string; notes: string; busy: boolean; onCorrectionType: (value: string) => void; onRequestedDate: (value: string) => void; onRequestedTime: (value: string) => void; onNotes: (value: string) => void; onSubmit: () => void }) {
-  return <Card><CardContent className="space-y-3 p-5"><h2 className="font-semibold">Request correction</h2><select value={correctionType} onChange={(event) => onCorrectionType(event.target.value)} className="h-10 w-full rounded-lg border bg-background px-3 text-sm"><option value="MISSED_CLOCK_IN">Missed Clock In</option><option value="MISSED_CLOCK_OUT">Missed Clock Out</option><option value="WRONG_CLOCK_IN_TIME">Wrong Clock In Time</option><option value="WRONG_CLOCK_OUT_TIME">Wrong Clock Out Time</option><option value="DUPLICATE_PUNCH">Duplicate Punch</option><option value="FORGOT_TO_CLOCK_OUT">Forgot To Clock Out</option><option value="OTHER">Other</option></select><div className="grid gap-3 sm:grid-cols-2"><Input type="date" value={requestedDate} onChange={(event) => onRequestedDate(event.target.value)} /><Input type="time" value={requestedTime} onChange={(event) => onRequestedTime(event.target.value)} /></div><Input value={notes} onChange={(event) => onNotes(event.target.value)} placeholder="Optional notes" /><Button disabled={busy} onClick={onSubmit}>Submit request</Button></CardContent></Card>
+function CorrectionForm({ correctionType, requestedDate, requestedTime, busy, onCorrectionType, onRequestedDate, onRequestedTime, onSubmit }: { correctionType: string; requestedDate: string; requestedTime: string; busy: boolean; onCorrectionType: (value: string) => void; onRequestedDate: (value: string) => void; onRequestedTime: (value: string) => void; onSubmit: () => void }) {
+  return <Card><CardContent className="space-y-3 p-5"><h2 className="font-semibold">Request correction</h2><p className="text-sm text-muted-foreground">Select the issue, date, and correct time. No written reason is needed.</p><select value={correctionType} onChange={(event) => onCorrectionType(event.target.value)} className="h-10 w-full rounded-lg border bg-background px-3 text-sm"><option value="MISSED_CLOCK_IN">Missed Clock In</option><option value="MISSED_CLOCK_OUT">Missed Clock Out</option><option value="WRONG_CLOCK_IN_TIME">Wrong Clock In Time</option><option value="WRONG_CLOCK_OUT_TIME">Wrong Clock Out Time</option><option value="DUPLICATE_PUNCH">Duplicate Punch</option></select><div className="grid gap-3 sm:grid-cols-2"><Input type="date" value={requestedDate} onChange={(event) => onRequestedDate(event.target.value)} /><Input type="time" value={requestedTime} onChange={(event) => onRequestedTime(event.target.value)} /></div><Button disabled={busy || !requestedTime} onClick={onSubmit}>Submit request</Button></CardContent></Card>
 }
 
 function DeviceState({ device, onRefresh }: { device: DeviceInfo | null; onRefresh: () => void }) {
@@ -363,14 +348,4 @@ function DeviceState({ device, onRefresh }: { device: DeviceInfo | null; onRefre
 
 function formatTime(value: string | null | undefined) {
   return value ? new Date(value).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "None"
-}
-function formatDateTime(value: string) {
-  return new Date(value).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })
-}
-function shiftContextStatus(shift: ShiftInfo) {
-  if (shift.status === "MISSED") return "Missed"
-  const now = Date.now()
-  if (now < new Date(shift.startTime).getTime()) return "Upcoming"
-  if (now <= new Date(shift.endTime).getTime()) return "In progress"
-  return "Completed"
 }
